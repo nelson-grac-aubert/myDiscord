@@ -1,21 +1,3 @@
-
-```python
-"""
-
-Ce projet est une application de test en langage C permettant d'ouvrir une fenêtre graphique de $800 \\times 600$ pixels et d'y afficher le message "Hello World!" parfaitement centré à l'écran en utilisant la police **Urbanist Regular**.
-
-Il est configuré pour être compilé directement depuis **Windows PowerShell** en utilisant le compilateur GCC fourni par **MSYS2 (UCRT64)**.
-
-## Structure du Projet
-
-```text
-├── main.c                  # Code source C (Logique d'affichage et calcul du centrage)
-├── Makefile                # Script de compilation adapté pour PowerShell
-├── font.ttf / Urbanist.ttf # La police d'écriture TrueType utilisée pour le rendu
-└── README.md               # Documentation du projet
-
-```
-
 ## Prérequis & Installation
 
 ### 1. Installation des outils via MSYS2
