@@ -16,22 +16,32 @@ They cannot be in a string */
 typedef enum {
 
     /* authentication */
-    AUTH_REGISTER, AUTH_LOGIN, AUTH_LOGOUT,
-
+    AUTH_REGISTER,  /* email | password | username */
+    AUTH_LOGIN,     /* email | password */
+    AUTH_LOGOUT,
+ 
     /* messaging */
-    MSG_SEND, MSG_HISTORY, MSG_REACTION,
-
+    MSG_SEND,       /* channel_id | content */
+    MSG_HISTORY,    /* channel_id */
+    MSG_REACTION,   /* message_id | emoji */
+ 
     /* channels */
-    CHANNEL_JOIN, CHANNEL_LEAVE, CHANNEL_CREATE, CHANNEL_DELETE, CHANNEL_LIST,
-
+    CHANNEL_JOIN,   /* channel_id */
+    CHANNEL_LEAVE,  /* channel_id */
+    CHANNEL_CREATE, /* name | is_private (0 or 1) */
+    CHANNEL_DELETE, /* channel_id */
+    CHANNEL_LIST, 
+ 
     /* users */
-    USER_BAN, USER_LIST,
-
+    USER_BAN,       /* user_id */
+    USER_LIST,      /* channel_id */
+ 
     /* responses */
-    SERVER_OK, SERVER_ERROR, SERVER_PUSH,
-
-    /* just to get the right total amount of packets since enum starts at 0 */
-    PACKET_TYPE_COUNT 
+    SERVER_OK,      /* message_text */
+    SERVER_ERROR,   /* error_message */
+    SERVER_PUSH,    /* channel_id | author | ts | content */
+ 
+    PACKET_TYPE_COUNT /* used for bounds checking */
 
 } PacketType;
 
