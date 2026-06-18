@@ -6,7 +6,29 @@ Vérifie que vos machines communiquent bien entre elles avant de commencer le vr
 
 ## Prérequis
 
-Avoir gcc et make installés. Si ce n'est pas le cas, suivre le README principal.
+### Installer gcc (MinGW)
+Télécharge et installe [MinGW](https://sourceforge.net/projects/mingw/).  
+Durant l'installation, coche `mingw32-gcc-g++`.
+
+Ajoute au PATH : `C:\MinGW\bin`
+
+### Installer make
+```bash
+winget install GnuWin32.Make
+```
+
+Ajoute au PATH : `C:\Program Files (x86)\GnuWin32\bin`
+
+> **Modifier le PATH :**  
+> Touche Windows → "variables d'environnement" → Variables d'environnement  
+> → Variables système → Path → Modifier → Nouveau → coller le chemin → OK partout  
+> → **Redémarrer le terminal**
+
+Vérifie :
+```bash
+gcc --version
+make --version
+```
 
 ---
 
