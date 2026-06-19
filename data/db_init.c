@@ -2,9 +2,7 @@
 #include <stdlib.h>
 #include "db_init.h"
 
-/* ------------------------------------------------------------------ */
-/* Utilitaire interne                                                   */
-/* ------------------------------------------------------------------ */
+
 
 static int exec_sql(PGconn *conn, const char *sql, const char *label)
 {
@@ -28,9 +26,6 @@ static int exec_sql(PGconn *conn, const char *sql, const char *label)
         return -1; \
     }
 
-/* ------------------------------------------------------------------ */
-/* initializeData                                                       */
-/* ------------------------------------------------------------------ */
 
 int initializeData(PGconn *conn)
 {

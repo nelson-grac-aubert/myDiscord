@@ -3,13 +3,7 @@
 #include <libpq-fe.h>
 #include "db_init.h"
 
-/*
- * Compilation :
- *   gcc main.c db_init.c -o main \
- *       -I$(pg_config --includedir) \
- *       -L$(pg_config --libdir) -lpq
- *
- */
+
 
 int main(int argc, char *argv[])
 {
