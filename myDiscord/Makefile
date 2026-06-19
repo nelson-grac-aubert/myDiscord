@@ -4,7 +4,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra -std=c17 `pkg-config --cflags sdl2 SDL2_ttf`
 LIBS = `pkg-config --libs sdl2 SDL2_ttf`
 
-SRC = main.c client/view/ui_login.c
+SRC = main.c client/view/src/welcome.c client/view/src/ui_login.c
 
 TARGET = myDiscord
 

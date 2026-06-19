@@ -1,5 +1,5 @@
 #include "auth_controller.h"
-#include "../model/user.h"
+#include "../model/include/user.h"
 #include <string.h>
 
 int auth_controller_login(const char *email, const char *password, User **out_user) {
