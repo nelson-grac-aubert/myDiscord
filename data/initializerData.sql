@@ -77,7 +77,7 @@ COMMIT;
 BEGIN;
 
 INSERT INTO role (nom_role) VALUES
-    ('admin'), ('membre'), ('moderateur');
+    ('admin'), ('utilisateur'), ('moderateur');
 
 INSERT INTO utilisateur (email, nom, prenom, mdp_hash, statut, id_role) VALUES
     ('alice@example.com', 'Dupont', 'Alice', 'hash_alice', 'actif', 1),
