@@ -3,10 +3,7 @@
  * Initialisation d'une base PostgreSQL (schema + donnees de test)
  * a partir du MLD : ROLE, UTILISATEUR, CANAL, MESSAGE, REACTION, FICHIER
  *
- * Compilation (Linux/Debian/Ubuntu) :
- *   sudo apt-get install libpq-dev
- *   gcc init_db.c -o init_db -lpq -I/usr/include/postgresql
- *
+ * 
  * Execution :
  *   ./init_db "host=localhost port=5432 dbname=monapp user=postgres password=secret"
  *   (ou sans argument : utilise la variable DATABASE_URL / valeurs par defaut ci-dessous)
@@ -17,7 +14,6 @@
 #include <string.h>
 #include <libpq-fe.h>
 
-/* ---------- Utilitaires ---------- */
 
 static void die(PGconn *conn, const char *msg) {
     fprintf(stderr, "ERREUR: %s\n%s\n", msg, PQerrorMessage(conn));
