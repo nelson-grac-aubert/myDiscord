@@ -1,4 +1,4 @@
-#include "client/view/include/welcome.h"
+#include "client/view/include/ui_welcome.h"
 
 int main(int argc, char **argv) {
     (void)argc;
