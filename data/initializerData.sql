@@ -13,7 +13,7 @@ DROP TABLE IF EXISTS utilisateur CASCADE;
 DROP TABLE IF EXISTS role CASCADE;
 
 DROP TYPE IF EXISTS statut_utilisateur;
-CREATE TYPE statut_utilisateur AS ENUM ('actif', 'inactif', 'banni');
+CREATE TYPE statut_utilisateur AS ENUM ('en ligne', 'hors ligne', 'occupe','banni');
 
 -- ROLE
 CREATE TABLE role (
