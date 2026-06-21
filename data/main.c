@@ -3,8 +3,6 @@
 #include <libpq-fe.h>
 #include "db_init.h"
 
-
-
 int main(int argc, char *argv[])
 {
     const char *host   = argc > 1 ? argv[1] : "localhost";
@@ -22,11 +20,11 @@ int main(int argc, char *argv[])
 
     PGconn *conn = PQconnectdb(conninfo);
     if (PQstatus(conn) != CONNECTION_OK) {
-        fprintf(stderr, "Echec de connexion : %s\n", PQerrorMessage(conn));
+        fprintf(stderr, "[ERREUR] Connexion echouee : %s\n", PQerrorMessage(conn));
         PQfinish(conn);
         return EXIT_FAILURE;
     }
-    puts("Connecte a PostgreSQL.\n");
+    printf("[OK] Connecte a %s\n\n", dbname);
 
     int ret = initializeData(conn);
 
