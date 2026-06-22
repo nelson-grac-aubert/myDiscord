@@ -1,9 +1,4 @@
--- init_db.sql
--- Initialisation de la base "mydiscord" (schema + donnees de test)
--- Execution dans pgAdmin4 :
---   1. Clic droit sur la base "mydiscord" > Query Tool
---   2. Ouvrir ce fichier (File > Open) ou coller le contenu
---   3. Appuyer sur F5 ou le bouton "Execute"
+
 
 BEGIN;
 
