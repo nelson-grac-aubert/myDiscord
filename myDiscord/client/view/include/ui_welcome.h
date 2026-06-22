@@ -1,7 +1,10 @@
-#ifndef WELCOME_H
-#define WELCOME_H
+#ifndef UI_WELCOME_H
+#define UI_WELCOME_H
 
-// Lance la fenêtre d'accueil de l'application
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_ttf.h>
+
+/* Returns 1 if user logged in, 0 if window was closed */
 int welcome_ui_init_and_run(void);
 
-#endif /* WELCOME_H */
+#endif /* UI_WELCOME_H */
