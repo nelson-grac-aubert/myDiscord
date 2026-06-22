@@ -14,7 +14,7 @@ typedef enum {
     FOCUS_EMAIL,
     FOCUS_USERNAME,
     FOCUS_PASSWORD,
-    FOCUS_CONFIRM      // <-- Ajout du champ de confirmation
+    FOCUS_CONFIRM 
 } ActiveFocus;
 
 typedef struct {
@@ -23,7 +23,7 @@ typedef struct {
     char text_email[128];
     char text_username[128];
     char text_password[128];
-    char text_confirm[128];   // <-- Ajout du texte de confirmation
+    char text_confirm[128];
 } UIState;
 
 void draw_text(SDL_Renderer *renderer, TTF_Font *font, const char *text, int x, int y, SDL_Color color);
