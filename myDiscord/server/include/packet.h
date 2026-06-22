@@ -86,7 +86,7 @@ int packet_deserialize(const char *raw, Packet *out);
 int packet_encode(const char *src, char *dst, int dst_size);
 
 /*
- * Reverse of packet_escape — restore original characters after parsing.
+ * Reverse of packet_escape : restore original characters after parsing.
  * Returns 0 on success, -1 if dst is too small.
  */
 int packet_decode(const char *src, char *dst, int dst_size);
