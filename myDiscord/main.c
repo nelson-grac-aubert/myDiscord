@@ -1,7 +1,8 @@
 #include "client/view/include/ui_welcome.h"
-#include "client/view/include/ui_chat.h" // ➡️ AJOUT : Pour pouvoir appeler l'interface du chat
+#include "client/view/include/ui_chat.h" 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
+#include <stdio.h>
 
 int main(int argc, char **argv) {
     (void)argc;
@@ -16,13 +17,32 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    // 2. Lance l'interface d'accueil et récupère le résultat de la connexion
-    // welcome_ui_init_and_run renvoie désormais 1 si connecté, 0 si fermé avec la croix
-    int user_logged_in = welcome_ui_init_and_run();
+    int app_running = 1;
 
-    // 3. Si l'utilisateur s'est connecté avec succès, on bascule sur la fenêtre de Chat !
-    if (user_logged_in) {
-        chat_ui_init_and_run();
+    // ➡️ Machine à états : Tant que app_running est vrai, on peut naviguer entre les écrans
+    while (app_running) {
+        
+        // 2. Lance l'interface d'accueil/login
+        int user_logged_in = welcome_ui_init_and_run();
+
+        // Si l'utilisateur a fermé la fenêtre d'accueil avec la croix
+        if (!user_logged_in) {
+            app_running = 0; // On casse la boucle pour quitter l'application
+            break;
+        }
+
+        // 3. L'utilisateur s'est connecté -> On bascule sur la fenêtre de Chat !
+        int chat_status = chat_ui_init_and_run();
+
+        if (chat_status == 2) {
+            // L'utilisateur a cliqué sur Déconnexion !
+            // On affiche un log et on laisse app_running à 1. La boucle while recommence,
+            // ce qui va ré-ouvrir automatiquement l'écran welcome_ui_init_and_run().
+            printf("[MAIN] Redirection vers l'écran de login...\n");
+        } else {
+            // L'utilisateur a fermé le chat avec la croix (chat_status == 0)
+            app_running = 0; // On quitte définitivement
+        }
     }
 
     // 4. Fermeture propre et définitive de la SDL et TTF à la toute fin du programme

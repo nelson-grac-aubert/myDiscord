@@ -1,11 +1,19 @@
 CC = gcc
 
-# Options de compilation et inclusion de SDL2 et SDL2_ttf via pkg-config
-CFLAGS = -Wall -Wextra -std=c17 `pkg-config --cflags sdl2 SDL2_ttf`
-LIBS = `pkg-config --libs sdl2 SDL2_ttf`
+# Options de compilation et inclusion de SDL2, SDL2_ttf et SDL2_image via pkg-config
+# -Iclient/view/include permet au compilateur de trouver tes fichiers .h
+CFLAGS = -Wall -Wextra -std=c17 -Iclient/view/include `pkg-config --cflags sdl2 SDL2_ttf SDL2_image`
+LIBS = `pkg-config --libs sdl2 SDL2_ttf SDL2_image`
 
-# ➡️ AJOUT : client/view/src/ui_chat.c à la fin de la liste
-SRC = main.c client/view/src/ui_welcome.c client/view/src/ui_login.c client/view/src/ui_chat.c
+# Liste complète de tous les fichiers sources du projet
+SRC = main.c \
+      client/view/src/ui_welcome.c \
+      client/view/src/ui_login.c \
+      client/view/src/ui_chat_store.c \
+      client/view/src/ui_chat_components.c \
+      client/view/src/ui_channels.c \
+      client/view/src/ui_users.c \
+      client/view/src/ui_chat.c
 
 TARGET = myDiscord
 
