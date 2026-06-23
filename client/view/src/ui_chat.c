@@ -1,33 +1,37 @@
 #include "../include/ui_chat.h"
+#include "../include/ui_chat_store.h"
+#include "../include/ui_chat_components.h"
+#include "../include/ui_channels.h"
+#include "../include/ui_users.h"
 #include <stdio.h>
 #include <string.h>
 
-#define COLOR_BG_SERVERS   0x1E, 0x1F, 0x22, 0xFF 
-#define COLOR_BG_CHANNELS  0x2B, 0x2D, 0x31, 0xFF 
-#define COLOR_BG_CHAT      0x31, 0x33, 0x38, 0xFF 
-#define COLOR_BG_MEMBERS   0x2B, 0x2D, 0x31, 0xFF 
-#define COLOR_BG_INPUT     0x38, 0x3A, 0x40, 0xFF 
+#define COLOR_BG_SERVERS  0x0D, 0x0E, 0x12, 0xFF
+#define COLOR_BG_CHANNELS 0x12, 0x14, 0x1C, 0xFF
+#define COLOR_BG_CHAT     0x16, 0x19, 0x24, 0xFF
+#define COLOR_BG_MEMBERS  0x12, 0x14, 0x1C, 0xFF
+#define COLOR_BG_INPUT    0x1F, 0x23, 0x33, 0xFF
 
-static void local_draw_text(SDL_Renderer *renderer, TTF_Font *font, const char *text, int x, int y, SDL_Color color) {
-    if (!font || !text || text[0] == '\0') return;
-    SDL_Surface *surface = TTF_RenderUTF8_Blended(font, text, color);
-    if (!surface) return;
-    SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
-    if (texture) {
-        SDL_Rect dst_rect = { x, y, surface->w, surface->h };
-        SDL_RenderCopy(renderer, texture, NULL, &dst_rect);
-        SDL_DestroyTexture(texture);
-    }
-    SDL_FreeSurface(surface);
+static void compute_modal_rects(ChatLayout *layout, int win_w, int win_h)
+{
+    int modal_w = 440;
+    int modal_h = 280;
+    modal_bg_rect      = (SDL_Rect){ (win_w - modal_w) / 2, (win_h - modal_h) / 2, modal_w, modal_h };
+    modal_input_rect   = (SDL_Rect){ modal_bg_rect.x + 30, modal_bg_rect.y + 90,  modal_bg_rect.w - 60, 40 };
+    modal_toggle_rect  = (SDL_Rect){ modal_bg_rect.x + 30, modal_bg_rect.y + 175, 50, 24 };
+    modal_btn_cancel   = (SDL_Rect){ modal_bg_rect.x + 210, modal_bg_rect.y + 220, 90, 36 };
+    modal_btn_confirm  = (SDL_Rect){ modal_bg_rect.x + 310, modal_bg_rect.y + 220, 100, 36 };
+    (void)layout;
 }
 
-void update_chat_layout(ChatLayout *layout, int win_w, int win_h) {
+void update_chat_layout(ChatLayout *layout, int win_w, int win_h)
+{
     layout->window_w = win_w;
     layout->window_h = win_h;
 
-    int servers_w  = 72;   
-    int channels_w = 240;  
-    int members_w  = 240;  
+    int servers_w  = 0;
+    int channels_w = 240;
+    int members_w  = 240;
     int chat_w     = win_w - (servers_w + channels_w + members_w);
 
     if (chat_w < 350) {
@@ -35,24 +39,23 @@ void update_chat_layout(ChatLayout *layout, int win_w, int win_h) {
         chat_w = win_w - (servers_w + channels_w);
     }
 
-    layout->sidebar_servers  = (SDL_Rect){0, 0, servers_w, win_h};
-    layout->sidebar_channels = (SDL_Rect){servers_w, 0, channels_w, win_h};
-    layout->chat_area        = (SDL_Rect){servers_w + channels_w, 0, chat_w, win_h};
-    layout->sidebar_members  = (SDL_Rect){win_w - members_w, 0, members_w, win_h};
+    layout->sidebar_servers  = (SDL_Rect){ 0, 0, servers_w, win_h };
+    layout->sidebar_channels = (SDL_Rect){ servers_w, 0, channels_w, win_h };
+    layout->chat_area        = (SDL_Rect){ servers_w + channels_w, 0, chat_w, win_h };
+    layout->sidebar_members  = (SDL_Rect){ win_w - members_w, 0, members_w, win_h };
 
-    layout->chat_top_bar   = (SDL_Rect){layout->chat_area.x, 0, layout->chat_area.w, 48};
-    layout->chat_input_bar = (SDL_Rect){layout->chat_area.x + 16, win_h - 68, layout->chat_area.w - 32, 44};
+    layout->chat_top_bar   = (SDL_Rect){ layout->chat_area.x, 0, layout->chat_area.w, 48 };
+    layout->chat_input_bar = (SDL_Rect){ layout->chat_area.x + 16, win_h - 68, layout->chat_area.w - 32, 44 };
+
+    channels_update_layout(layout, win_h);
+    compute_modal_rects(layout, win_w, win_h);
+
+    if (layout->menu_type > 0)
+        layout->menu_rect = (SDL_Rect){ layout->menu_x, layout->menu_y, 130, 32 };
 }
 
-void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout,
-                         TTF_Font *font_title, TTF_Font *font_main, TTF_Font *font_sub) {
-    
-    SDL_Color white_color   = {255, 255, 255, 255};
-    SDL_Color gray_color    = {148, 155, 164, 255};
-    SDL_Color dark_gray     = {94, 99, 106, 255};
-    SDL_Color green_online  = {35, 165, 90, 255};
-
-    // 1. Dessin des grands panneaux d'arrière-plan
+static void draw_backgrounds(SDL_Renderer *renderer, ChatLayout *layout)
+{
     SDL_SetRenderDrawColor(renderer, COLOR_BG_SERVERS);
     SDL_RenderFillRect(renderer, &layout->sidebar_servers);
 
@@ -62,99 +65,293 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout,
     SDL_SetRenderDrawColor(renderer, COLOR_BG_CHAT);
     SDL_RenderFillRect(renderer, &layout->chat_area);
 
-    if (layout->sidebar_members.w > 0) {
-        SDL_SetRenderDrawColor(renderer, COLOR_BG_MEMBERS);
-        SDL_RenderFillRect(renderer, &layout->sidebar_members);
-    }
+    SDL_SetRenderDrawColor(renderer, 0x0D, 0x0E, 0x12, 0xFF);
+    SDL_RenderDrawLine(renderer,
+        layout->chat_top_bar.x, layout->chat_top_bar.h,
+        layout->chat_top_bar.x + layout->chat_top_bar.w, layout->chat_top_bar.h);
+}
 
-    // 2. Séparation fine sous la barre du haut
-    SDL_SetRenderDrawColor(renderer, 0x1F, 0x20, 0x23, 0xFF);
-    SDL_RenderDrawLine(renderer, layout->chat_top_bar.x, layout->chat_top_bar.h, 
-                                 layout->chat_top_bar.x + layout->chat_top_bar.w, layout->chat_top_bar.h);
-
-    // 3. Zone d'entrée de texte
+static void draw_input_bar(SDL_Renderer *renderer, ChatLayout *layout,
+                           TTF_Font *font_main,
+                           SDL_Color white, SDL_Color dark_gray, SDL_Color blurple)
+{
     SDL_SetRenderDrawColor(renderer, COLOR_BG_INPUT);
     SDL_RenderFillRect(renderer, &layout->chat_input_bar);
 
-    // Rendu dynamique du texte saisi ou du placeholder indicatif
+    LocalChannel *ch = store_get_active_channel();
+    if (!ch) return;
+
     if (strlen(layout->input_buffer) == 0) {
-        local_draw_text(renderer, font_main, "Envoyer un message dans # general", layout->chat_input_bar.x + 15, layout->chat_input_bar.y + 12, dark_gray);
+        char placeholder[64];
+        snprintf(placeholder, sizeof(placeholder), "Envoyer un message dans %s %s",
+                 ch->is_private ? "🔒" : "#", ch->name);
+        components_draw_text(renderer, font_main, placeholder,
+                             layout->chat_input_bar.x + 15, layout->chat_input_bar.y + 12, dark_gray);
     } else {
-        local_draw_text(renderer, font_main, layout->input_buffer, layout->chat_input_bar.x + 15, layout->chat_input_bar.y + 12, white_color);
+        components_draw_text(renderer, font_main, layout->input_buffer,
+                             layout->chat_input_bar.x + 15, layout->chat_input_bar.y + 12, white);
     }
 
-    // Bordure bleue claire si l'input a le focus
     if (layout->is_input_focused) {
-        SDL_SetRenderDrawColor(renderer, 0x00, 0xAA, 0xFF, 0xFF);
+        SDL_SetRenderDrawColor(renderer, blurple.r, blurple.g, blurple.b, blurple.a);
         SDL_RenderDrawRect(renderer, &layout->chat_input_bar);
-    }
-
-    // A. Titre du salon actuel
-    local_draw_text(renderer, font_title, "# general", layout->chat_top_bar.x + 20, 13, white_color);
-
-    // B. Contenu de la colonne des Salons
-    local_draw_text(renderer, font_sub, "SALONS TEXTUELS", layout->sidebar_channels.x + 15, 20, dark_gray);
-    local_draw_text(renderer, font_main, "#  general", layout->sidebar_channels.x + 15, 55, white_color);
-    local_draw_text(renderer, font_main, "#  gaming-hub", layout->sidebar_channels.x + 15, 85, gray_color);
-    local_draw_text(renderer, font_main, "#  off-topic", layout->sidebar_channels.x + 15, 115, gray_color);
-
-    // C. Contenu de la colonne des Membres
-    if (layout->sidebar_members.w > 0) {
-        local_draw_text(renderer, font_sub, "EN LIGNE — 3", layout->sidebar_members.x + 20, 20, dark_gray);
-        local_draw_text(renderer, font_main, "●  Nexus_One", layout->sidebar_members.x + 20, 55, green_online);
-        local_draw_text(renderer, font_main, "●  SARA_X", layout->sidebar_members.x + 20, 85, green_online);
-        local_draw_text(renderer, font_main, "●  AlexK", layout->sidebar_members.x + 20, 115, green_online);
-    }
-
-    // D. HISTORIQUE DYNAMIQUE DES MESSAGES EN MÉMOIRE RAM LOCAL
-    int chat_x = layout->chat_area.x + 20;
-    int base_y = 70;
-
-    for (int i = 0; i < layout->message_count; i++) {
-        // Pseudo
-        local_draw_text(renderer, font_sub, layout->messages[i].username, chat_x, base_y, green_online);
-        // Message texte
-        local_draw_text(renderer, font_main, layout->messages[i].text, chat_x, base_y + 22, white_color);
-        
-        base_y += 55; // Espacement vertical automatique entre chaque message
+        components_draw_cursor(renderer, font_main, layout->input_buffer,
+                               layout->chat_input_bar.x + 15, layout->chat_input_bar.y + 12,
+                               18, white);
     }
 }
 
-void chat_ui_init_and_run(void) {
-    TTF_Font *font_title = TTF_OpenFont("fonts/Urbanist-Bold.ttf", 18);
-    TTF_Font *font_main  = TTF_OpenFont("fonts/Urbanist-Regular.ttf", 15);
-    TTF_Font *font_sub   = TTF_OpenFont("fonts/Urbanist-SemiBold.ttf", 13);
+static void draw_channel_title(SDL_Renderer *renderer, ChatLayout *layout,
+                               TTF_Font *font_title, SDL_Color white)
+{
+    LocalChannel *ch = store_get_active_channel();
+    if (!ch) return;
 
-    if (!font_title || !font_main || !font_sub) {
-        printf("[CHAT ERROR] Impossible de charger les polices.\n");
+    char title[64];
+    snprintf(title, sizeof(title), "%s %s", ch->is_private ? "🔒" : "#", ch->name);
+    components_draw_text(renderer, font_title, title,
+                         layout->chat_top_bar.x + 20, 13, white);
+}
+
+static void draw_messages(SDL_Renderer *renderer, TTF_Font *font_main, TTF_Font *font_sub,
+                          ChatLayout *layout, SDL_Color white, SDL_Color green)
+{
+    LocalChannel *ch = store_get_active_channel();
+    if (!ch) return;
+
+    int x      = layout->chat_area.x + 20;
+    int base_y = 70;
+
+    for (int i = 0; i < ch->message_count; i++) {
+        components_draw_text(renderer, font_sub,  ch->messages[i].username, x, base_y,      green);
+        components_draw_text(renderer, font_main, ch->messages[i].text,     x, base_y + 22, white);
+        base_y += 55;
+    }
+}
+
+static void draw_context_menu(SDL_Renderer *renderer, ChatLayout *layout,
+                              TTF_Font *font_sub, SDL_Color white, int mx, int my)
+{
+    if (layout->menu_type == 0) return;
+
+    int hovered = (mx >= layout->menu_rect.x && mx <= layout->menu_rect.x + layout->menu_rect.w &&
+                   my >= layout->menu_rect.y && my <= layout->menu_rect.y + layout->menu_rect.h);
+
+    SDL_SetRenderDrawColor(renderer, hovered ? 242 : 25, hovered ? 63 : 28, hovered ? 67 : 38, 255);
+    SDL_RenderFillRect(renderer, &layout->menu_rect);
+    SDL_SetRenderDrawColor(renderer, 0x0D, 0x0E, 0x12, 255);
+    SDL_RenderDrawRect(renderer, &layout->menu_rect);
+    components_draw_text(renderer, font_sub, "Supprimer",
+                         layout->menu_rect.x + 35, layout->menu_rect.y + 8, white);
+}
+
+void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout,
+                         TTF_Font *font_title, TTF_Font *font_main, TTF_Font *font_sub)
+{
+    SDL_Color white   = { 255, 255, 255, 255 };
+    SDL_Color gray    = { 148, 155, 164, 255 };
+    SDL_Color dark_gray = { 94,  99, 106, 255 };
+    SDL_Color green   = {  35, 165,  90, 255 };
+    SDL_Color blurple = {  88, 101, 242, 255 };
+    SDL_Color red     = { 242,  63,  67, 255 };
+
+    int mx, my;
+    SDL_GetMouseState(&mx, &my);
+
+    draw_backgrounds(renderer, layout);
+    draw_input_bar(renderer, layout, font_main, white, dark_gray, blurple);
+    draw_channel_title(renderer, layout, font_title, white);
+
+    channels_draw_sidebar(renderer, layout, font_title, font_main, font_sub,
+                          mx, my, white, gray, dark_gray, red);
+
+    if (layout->sidebar_members.w > 0) {
+        SDL_SetRenderDrawColor(renderer, COLOR_BG_MEMBERS);
+        SDL_RenderFillRect(renderer, &layout->sidebar_members);
+        users_draw_sidebar(renderer, layout, font_main, font_sub, green, dark_gray);
+    }
+
+    draw_messages(renderer, font_main, font_sub, layout, white, green);
+
+    if (layout->show_create_modal) {
+        components_draw_modal(renderer, layout, font_title, font_main, font_sub,
+                              mx, my, white, gray, dark_gray);
+        if (layout->modal_focused_field == 1)
+            components_draw_cursor(renderer, font_main, layout->modal_name_buffer,
+                                   modal_input_rect.x + 12, modal_input_rect.y + 8, 18, white);
+    }
+
+    draw_context_menu(renderer, layout, font_sub, white, mx, my);
+}
+
+static void handle_right_click(ChatLayout *layout, int cx, int cy)
+{
+    layout->menu_type = 0;
+
+    int ch_y = 55;
+    for (int i = 0; i < store_get_channel_count(); i++) {
+        if (cx >= layout->sidebar_channels.x &&
+            cx <= layout->sidebar_channels.x + layout->sidebar_channels.w &&
+            cy >= ch_y - 4 && cy <= ch_y + 24) {
+            layout->menu_type    = 1;
+            layout->target_index = i;
+            layout->menu_x = cx;
+            layout->menu_y = cy;
+            return;
+        }
+        ch_y += 32;
+    }
+
+    if (cx >= layout->chat_area.x &&
+        cx <= layout->chat_area.x + layout->chat_area.w) {
+        LocalChannel *ch = store_get_active_channel();
+        if (!ch) return;
+        int base_y = 70;
+        for (int i = 0; i < ch->message_count; i++) {
+            if (cy >= base_y && cy <= base_y + 45) {
+                layout->menu_type    = 2;
+                layout->target_index = i;
+                layout->menu_x = cx;
+                layout->menu_y = cy;
+                return;
+            }
+            base_y += 55;
+        }
+    }
+}
+
+static void handle_left_click_menu(ChatLayout *layout, int cx, int cy)
+{
+    if (cx >= layout->menu_rect.x && cx <= layout->menu_rect.x + layout->menu_rect.w &&
+        cy >= layout->menu_rect.y && cy <= layout->menu_rect.y + layout->menu_rect.h) {
+        if (layout->menu_type == 1)
+            store_delete_channel_by_index(layout->target_index);
+        else if (layout->menu_type == 2)
+            store_delete_message_by_index(layout->target_index);
+    }
+    layout->menu_type = 0;
+}
+
+static void handle_left_click_modal(ChatLayout *layout, int cx, int cy)
+{
+    if (cx >= modal_input_rect.x && cx <= modal_input_rect.x + modal_input_rect.w &&
+        cy >= modal_input_rect.y && cy <= modal_input_rect.y + modal_input_rect.h)
+        layout->modal_focused_field = 1;
+    else
+        layout->modal_focused_field = 0;
+
+    if (cx >= modal_toggle_rect.x && cx <= modal_toggle_rect.x + modal_toggle_rect.w &&
+        cy >= modal_toggle_rect.y && cy <= modal_toggle_rect.y + modal_toggle_rect.h)
+        layout->modal_is_private = !layout->modal_is_private;
+
+    if (cx >= modal_btn_cancel.x && cx <= modal_btn_cancel.x + modal_btn_cancel.w &&
+        cy >= modal_btn_cancel.y && cy <= modal_btn_cancel.y + modal_btn_cancel.h)
+        layout->show_create_modal = 0;
+
+    if (cx >= modal_btn_confirm.x && cx <= modal_btn_confirm.x + modal_btn_confirm.w &&
+        cy >= modal_btn_confirm.y && cy <= modal_btn_confirm.y + modal_btn_confirm.h) {
+        if (strlen(layout->modal_name_buffer) > 0)
+            store_add_channel(layout->modal_name_buffer, layout->modal_is_private);
+        layout->show_create_modal = 0;
+    }
+}
+
+static int handle_left_click_normal(ChatLayout *layout, int cx, int cy)
+{
+    if (cx >= btn_options.x && cx <= btn_options.x + btn_options.w &&
+        cy >= btn_options.y && cy <= btn_options.y + btn_options.h) {
+        printf("[LOG] Options...\n");
+    }
+
+    if (cx >= btn_logout.x && cx <= btn_logout.x + btn_logout.w &&
+        cy >= btn_logout.y && cy <= btn_logout.y + btn_logout.h) {
+        printf("[LOG] Deconnexion.\n");
+        return 2;
+    }
+
+    layout->is_input_focused = (
+        cx >= layout->chat_input_bar.x &&
+        cx <= layout->chat_input_bar.x + layout->chat_input_bar.w &&
+        cy >= layout->chat_input_bar.y &&
+        cy <= layout->chat_input_bar.y + layout->chat_input_bar.h);
+
+    if (cx >= btn_add_channel.x && cx <= btn_add_channel.x + btn_add_channel.w &&
+        cy >= btn_add_channel.y && cy <= btn_add_channel.y + btn_add_channel.h) {
+        layout->show_create_modal   = 1;
+        layout->modal_is_private    = 0;
+        layout->modal_focused_field = 1;
+        layout->modal_name_buffer[0] = '\0';
+    }
+
+    int ch_y = 55;
+    for (int i = 0; i < store_get_channel_count(); i++) {
+        if (cx >= layout->sidebar_channels.x &&
+            cx <= layout->sidebar_channels.x + layout->sidebar_channels.w &&
+            cy >= ch_y - 4 && cy <= ch_y + 22) {
+            store_set_active_index(i);
+            break;
+        }
+        ch_y += 32;
+    }
+
+    return 0;
+}
+
+static void handle_keydown(ChatLayout *layout, SDL_Keycode key)
+{
+    if (layout->show_create_modal && layout->modal_focused_field == 1 &&
+        key == SDLK_BACKSPACE) {
+        size_t len = strlen(layout->modal_name_buffer);
+        if (len > 0) layout->modal_name_buffer[len - 1] = '\0';
         return;
     }
 
-    SDL_Window *window = SDL_CreateWindow("myDiscord - Chat Hub", 
-                                          SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 
-                                          1100, 700, 
-                                          SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
-    
-    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    if (!layout->is_input_focused) return;
 
-    SDL_Cursor *cursor_arrow = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
-    SDL_Cursor *cursor_ibeam = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_IBEAM);
+    if (key == SDLK_BACKSPACE) {
+        size_t len = strlen(layout->input_buffer);
+        if (len > 0) layout->input_buffer[len - 1] = '\0';
+    } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
+        if (strlen(layout->input_buffer) > 0) {
+            store_add_message_to_active("Moi (Local)", layout->input_buffer);
+            layout->input_buffer[0] = '\0';
+        }
+    }
+}
 
-    // Initialisation propre de la structure de layout et de message
+static void handle_textinput(ChatLayout *layout, const char *text)
+{
+    if (layout->show_create_modal && layout->modal_focused_field == 1) {
+        if (strlen(layout->modal_name_buffer) + strlen(text) < 31)
+            strcat(layout->modal_name_buffer, text);
+        return;
+    }
+    if (layout->is_input_focused &&
+        strlen(layout->input_buffer) + strlen(text) < MAX_MSG_LENGTH - 1)
+        strcat(layout->input_buffer, text);
+}
+
+int chat_ui_init_and_run(void)
+{
+    TTF_Font *font_title = TTF_OpenFont("fonts/Urbanist-Bold.ttf",    18);
+    TTF_Font *font_main  = TTF_OpenFont("fonts/Urbanist-Regular.ttf", 15);
+    TTF_Font *font_sub   = TTF_OpenFont("fonts/Urbanist-SemiBold.ttf",13);
+    if (!font_title || !font_main || !font_sub) return 0;
+
+    SDL_Window   *window   = SDL_CreateWindow("myDiscord - Chat",
+                                 SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+                                 1100, 700,
+                                 SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1,
+                                 SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+
     ChatLayout layout;
-    memset(layout.input_buffer, 0, MAX_MSG_LENGTH);
-    layout.is_input_focused = 0;
-    layout.message_count = 0;
-
-    // Simulation de quelques messages au chargement
-    strcpy(layout.messages[0].username, "Nexus_One");
-    strcpy(layout.messages[0].text, "Salut tout le monde ! Le serveur SDL avance bien ?");
-    strcpy(layout.messages[1].username, "SARA_X");
-    strcpy(layout.messages[1].text, "Carrément ! Le design responsive fonctionne parfaitement.");
-    layout.message_count = 2;
+    memset(&layout, 0, sizeof(ChatLayout));
+    store_init();
 
     SDL_StartTextInput();
-    int running = 1;
+    int running     = 1;
+    int exit_status = 0;
     SDL_Event event;
 
     while (running) {
@@ -162,77 +359,52 @@ void chat_ui_init_and_run(void) {
         SDL_GetWindowSize(window, &win_w, &win_h);
         update_chat_layout(&layout, win_w, win_h);
 
-        // Curseur dynamique au survol de l'input texte
-        int mx, my;
-        SDL_GetMouseState(&mx, &my);
-        if (mx >= layout.chat_input_bar.x && mx <= (layout.chat_input_bar.x + layout.chat_input_bar.w) &&
-            my >= layout.chat_input_bar.y && my <= (layout.chat_input_bar.y + layout.chat_input_bar.h)) {
-            SDL_SetCursor(cursor_ibeam);
-        } else {
-            SDL_SetCursor(cursor_arrow);
-        }
-
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
-                running = 0;
+                running     = 0;
+                exit_status = 0;
             }
 
-            // Gestion du Clic Souris pour activer la saisie
-            if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
+            if (event.type == SDL_MOUSEBUTTONDOWN) {
                 int cx = event.button.x;
                 int cy = event.button.y;
 
-                if (cx >= layout.chat_input_bar.x && cx <= (layout.chat_input_bar.x + layout.chat_input_bar.w) &&
-                    cy >= layout.chat_input_bar.y && cy <= (layout.chat_input_bar.y + layout.chat_input_bar.h)) {
-                    layout.is_input_focused = 1;
-                } else {
-                    layout.is_input_focused = 0;
-                }
-            }
-
-            // Gestion des touches du Clavier
-            if (event.type == SDL_KEYDOWN && layout.is_input_focused) {
-                // Effacer un caractère (Retour arrière)
-                if (event.key.keysym.sym == SDLK_BACKSPACE) {
-                    size_t len = strlen(layout.input_buffer);
-                    if (len > 0) layout.input_buffer[len - 1] = '\0';
-                }
-                // Envoyer le message (Touche Entrée)
-                else if (event.key.keysym.sym == SDLK_RETURN || event.key.keysym.sym == SDLK_KP_ENTER) {
-                    if (strlen(layout.input_buffer) > 0 && layout.message_count < MAX_MESSAGES) {
-                        // Stockage local du message tapé
-                        strcpy(layout.messages[layout.message_count].username, "Moi (Local)");
-                        strcpy(layout.messages[layout.message_count].text, layout.input_buffer);
-                        layout.message_count++;
-
-                        // Remise à zéro sécurisée de la barre d'input
-                        layout.input_buffer[0] = '\0';
+                if (event.button.button == SDL_BUTTON_RIGHT) {
+                    handle_right_click(&layout, cx, cy);
+                } else if (event.button.button == SDL_BUTTON_LEFT) {
+                    if (layout.menu_type > 0) {
+                        handle_left_click_menu(&layout, cx, cy);
+                    } else if (layout.show_create_modal) {
+                        handle_left_click_modal(&layout, cx, cy);
+                    } else {
+                        int status = handle_left_click_normal(&layout, cx, cy);
+                        if (status == 2) {
+                            running     = 0;
+                            exit_status = 2;
+                        }
                     }
                 }
             }
 
-            // Saisie textuelle standard (Lettres, chiffres, espace...)
-            if (event.type == SDL_TEXTINPUT && layout.is_input_focused) {
-                if (strlen(layout.input_buffer) + strlen(event.text.text) < MAX_MSG_LENGTH - 1) {
-                    strcat(layout.input_buffer, event.text.text);
-                }
-            }
+            if (event.type == SDL_KEYDOWN)
+                handle_keydown(&layout, event.key.keysym.sym);
+
+            if (event.type == SDL_TEXTINPUT)
+                handle_textinput(&layout, event.text.text);
         }
 
-        SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xFF);
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
-
         draw_chat_interface(renderer, &layout, font_title, font_main, font_sub);
-
         SDL_RenderPresent(renderer);
     }
 
     SDL_StopTextInput();
-    SDL_FreeCursor(cursor_arrow);
-    SDL_FreeCursor(cursor_ibeam);
     TTF_CloseFont(font_title);
     TTF_CloseFont(font_main);
     TTF_CloseFont(font_sub);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
+
+    return exit_status;
 }
