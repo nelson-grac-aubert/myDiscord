@@ -1,15 +1,19 @@
 CC     = gcc
-CFLAGS = -Wall -Wextra -std=c17 -O2
+CFLAGS = -Wall -Wextra -std=c17 -O2 -I./client/view/include
 
 SDL_CFLAGS = -IC:/msys64/ucrt64/include
-SDL_LIBS   = -LC:/msys64/ucrt64/lib -lmingw32 -mwindows -lSDL2main -lSDL2 -lSDL2_ttf
+SDL_LIBS   = -LC:/msys64/ucrt64/lib -lmingw32 -mwindows -lSDL2main -lSDL2 -lSDL2_ttf -lSDL2_image
 
 SRC = main.c \
       client/view/src/ui_welcome.c \
       client/view/src/ui_login.c \
-      client/view/src/ui_chat.c
+      client/view/src/ui_chat.c \
+      client/view/src/ui_chat_store.c \
+      client/view/src/ui_chat_components.c \
+      client/view/src/ui_channels.c \
+      client/view/src/ui_users.c
 
-TARGET = myDiscord
+TARGET = myDiscord.exe
 
 all: $(TARGET)
 
