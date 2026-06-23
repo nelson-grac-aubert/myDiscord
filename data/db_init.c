@@ -31,17 +31,22 @@ int initializeData(PGconn *conn)
 
     EXEC("BEGIN;", "BEGIN")
 
-    EXEC(
-        "DROP TABLE IF EXISTS file      CASCADE;"
-        "DROP TABLE IF EXISTS reaction  CASCADE;"
-        "DROP TABLE IF EXISTS message   CASCADE;"
-        "DROP TABLE IF EXISTS channel   CASCADE;"
-        "DROP TABLE IF EXISTS whitelist CASCADE;"
-        "DROP TABLE IF EXISTS blacklist CASCADE;"
-        "DROP TABLE IF EXISTS \"user\"    CASCADE;"
-        "DROP TABLE IF EXISTS role      CASCADE;"
-        "DROP TYPE  IF EXISTS user_status;",
-        "DROP tables")
+    /* legacy French tables */
+    EXEC("DROP TABLE IF EXISTS fichier     CASCADE;", "DROP fichier")
+    EXEC("DROP TABLE IF EXISTS canal       CASCADE;", "DROP canal")
+    EXEC("DROP TABLE IF EXISTS utilisateur CASCADE;", "DROP utilisateur")
+    EXEC("DROP TYPE  IF EXISTS statut_utilisateur;",  "DROP statut_utilisateur")
+
+    /* English tables */
+    EXEC("DROP TABLE IF EXISTS file        CASCADE;", "DROP file")
+    EXEC("DROP TABLE IF EXISTS reaction    CASCADE;", "DROP reaction")
+    EXEC("DROP TABLE IF EXISTS message     CASCADE;", "DROP message")
+    EXEC("DROP TABLE IF EXISTS channel     CASCADE;", "DROP channel")
+    EXEC("DROP TABLE IF EXISTS whitelist   CASCADE;", "DROP whitelist")
+    EXEC("DROP TABLE IF EXISTS blacklist   CASCADE;", "DROP blacklist")
+    EXEC("DROP TABLE IF EXISTS \"user\"      CASCADE;", "DROP user")
+    EXEC("DROP TABLE IF EXISTS role        CASCADE;", "DROP role")
+    EXEC("DROP TYPE  IF EXISTS user_status;",         "DROP user_status")
 
     EXEC(
         "CREATE TYPE user_status AS ENUM "
