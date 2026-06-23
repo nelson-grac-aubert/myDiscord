@@ -59,6 +59,66 @@ static PGconn *connect_db(const char *conninfo)
     return conn;
 }
 
+static int registry_init(ClientRegistry *reg)
+{
+    memset(reg->clients, 0, sizeof(reg->clients));
+    reg->count = 0;
+    reg->mutex = CreateMutex(NULL, FALSE, NULL);
+    return reg->mutex == NULL ? -1 : 0;
+}
+
+int registry_add(ClientRegistry *reg, ClientInfo *client)
+{
+    WaitForSingleObject(reg->mutex, INFINITE);
+
+    int added = 0;
+    if (reg->count < MAX_CLIENTS) {
+        for (int i = 0; i < MAX_CLIENTS; i++) {
+            if (reg->clients[i] == NULL) {
+                reg->clients[i] = client;
+                reg->count++;
+                added = 1;
+                break;
+            }
+        }
+    }
+
+    ReleaseMutex(reg->mutex);
+    return added ? 0 : -1;
+}
+
+void registry_remove(ClientRegistry *reg, ClientInfo *client)
+{
+    WaitForSingleObject(reg->mutex, INFINITE);
+
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (reg->clients[i] == client) {
+            reg->clients[i] = NULL;
+            reg->count--;
+            break;
+        }
+    }
+
+    ReleaseMutex(reg->mutex);
+}
+
+void broadcast_to_channel(ClientRegistry *reg, int channel_id, const Packet *pkt)
+{
+    char buf[PACKET_MAX_SIZE];
+    if (packet_serialize(pkt, buf, sizeof(buf)) != 0)
+        return;
+
+    WaitForSingleObject(reg->mutex, INFINITE);
+
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        ClientInfo *c = reg->clients[i];
+        if (c != NULL && c->channel_id == channel_id)
+            send(c->sock, buf, (int)strlen(buf), 0);
+    }
+
+    ReleaseMutex(reg->mutex);
+}
+
 typedef struct {
     ClientInfo *client;
     ServerState *server;
@@ -96,7 +156,9 @@ static DWORD WINAPI client_thread(LPVOID arg)
 
     printf("[server] client #%d connected from %s\n", client->id, client->ip);
 
+    registry_add(&s->registry, client);
     handle_client_packets(client, s);
+    registry_remove(&s->registry, client);
 
     closesocket(client->sock);
     free(client);
@@ -112,6 +174,7 @@ static ClientInfo *make_client(SOCKET sock, struct sockaddr_in *addr, int id)
     client->sock = sock;
     client->id = id;
     client->user_id = -1;
+    client->channel_id = -1;
     strncpy(client->ip, inet_ntoa(addr->sin_addr), sizeof(client->ip) - 1);
     client->ip[sizeof(client->ip) - 1] = '\0';
     return client;
@@ -155,6 +218,13 @@ int server_init(ServerState *s, int port, const char *conninfo)
         return -1;
     }
 
+    if (registry_init(&s->registry) != 0) {
+        PQfinish(s->db);
+        closesocket(s->listen_sock);
+        WSACleanup();
+        return -1;
+    }
+
     printf("[server] listening on port %d\n", port);
     return 0;
 }
@@ -190,6 +260,7 @@ void server_run(ServerState *s)
 
 void server_cleanup(ServerState *s)
 {
+    CloseHandle(s->registry.mutex);
     PQfinish(s->db);
     closesocket(s->listen_sock);
     WSACleanup();
