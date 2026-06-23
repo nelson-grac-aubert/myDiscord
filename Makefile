@@ -1,12 +1,15 @@
-CC     = gcc
-CFLAGS = -Wall -Wextra -std=c17 -O2
-
-SDL_CFLAGS = -IC:/msys64/ucrt64/include
-SDL_LIBS   = -LC:/msys64/ucrt64/lib -lmingw32 -mwindows -lSDL2main -lSDL2 -lSDL2_ttf
+CC = gcc
+CFLAGS = -Wall -Wextra -std=c17 -Iclient/view/include \
+         `pkg-config --cflags sdl2 SDL2_ttf SDL2_image`
+LIBS = `pkg-config --libs sdl2 SDL2_ttf SDL2_image`
 
 SRC = main.c \
       client/view/src/ui_welcome.c \
       client/view/src/ui_login.c \
+      client/view/src/ui_chat_store.c \
+      client/view/src/ui_chat_components.c \
+      client/view/src/ui_channels.c \
+      client/view/src/ui_users.c \
       client/view/src/ui_chat.c
 
 TARGET = myDiscord
@@ -14,9 +17,9 @@ TARGET = myDiscord
 all: $(TARGET)
 
 $(TARGET): $(SRC)
-	$(CC) $(CFLAGS) $(SDL_CFLAGS) $(SRC) -o $(TARGET) $(SDL_LIBS)
+	$(CC) $(CFLAGS) $(SRC) $(LIBS) -o $(TARGET)
 
 clean:
-	del /f $(TARGET)
+	rm -f $(TARGET)
 
 .PHONY: all clean
