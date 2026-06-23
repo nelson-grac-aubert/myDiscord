@@ -1,4 +1,5 @@
 #include "../include/server.h"
+#include "../include/client_handler.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,14 +24,13 @@ static SOCKET create_listen_socket(int port)
         return INVALID_SOCKET;
     }
 
-    /* Allow immediate reuse of the port after restart */
     int reuse = 1;
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse));
 
     struct sockaddr_in addr;
-    addr.sin_family      = AF_INET;
+    addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port        = htons((u_short)port);
+    addr.sin_port = htons((u_short)port);
 
     if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) == SOCKET_ERROR) {
         fprintf(stderr, "bind() failed: %d\n", WSAGetLastError());
@@ -59,27 +59,18 @@ static PGconn *connect_db(const char *conninfo)
     return conn;
 }
 
-/* Each client thread receives this — freed by the thread on exit */
 typedef struct {
-    ClientInfo  *client;
+    ClientInfo *client;
     ServerState *server;
 } ThreadArgs;
 
-static DWORD WINAPI client_thread(LPVOID arg)
+static void handle_client_packets(ClientInfo *client, ServerState *s)
 {
-    ThreadArgs  *args   = (ThreadArgs *)arg;
-    ClientInfo  *client = args->client;
-    ServerState *s      = args->server;
-    free(args);
-
     char buffer[PACKET_MAX_SIZE];
-    int  bytes;
-
-    printf("[server] client #%d connected from %s\n", client->id, client->ip);
 
     while (1) {
         memset(buffer, 0, sizeof(buffer));
-        bytes = recv(client->sock, buffer, sizeof(buffer) - 1, 0);
+        int bytes = recv(client->sock, buffer, sizeof(buffer) - 1, 0);
 
         if (bytes <= 0) {
             printf("[server] client #%d disconnected\n", client->id);
@@ -92,13 +83,57 @@ static DWORD WINAPI client_thread(LPVOID arg)
             continue;
         }
 
-        /* Placeholder — client_handler_dispatch() comes next */
-        printf("[server] packet type=%d from client #%d\n",
-               pkt.type, client->id);
+        client_handler_dispatch(&pkt, client, s);
     }
+}
+
+static DWORD WINAPI client_thread(LPVOID arg)
+{
+    ThreadArgs *args = (ThreadArgs *)arg;
+    ClientInfo *client = args->client;
+    ServerState *s = args->server;
+    free(args);
+
+    printf("[server] client #%d connected from %s\n", client->id, client->ip);
+
+    handle_client_packets(client, s);
 
     closesocket(client->sock);
     free(client);
+    return 0;
+}
+
+static ClientInfo *make_client(SOCKET sock, struct sockaddr_in *addr, int id)
+{
+    ClientInfo *client = malloc(sizeof(ClientInfo));
+    if (!client)
+        return NULL;
+
+    client->sock = sock;
+    client->id = id;
+    client->user_id = -1;
+    strncpy(client->ip, inet_ntoa(addr->sin_addr), sizeof(client->ip) - 1);
+    client->ip[sizeof(client->ip) - 1] = '\0';
+    return client;
+}
+
+static int spawn_client_thread(ClientInfo *client, ServerState *s)
+{
+    ThreadArgs *args = malloc(sizeof(ThreadArgs));
+    if (!args)
+        return -1;
+
+    args->client = client;
+    args->server = s;
+
+    HANDLE thread = CreateThread(NULL, 0, client_thread, args, 0, NULL);
+    if (thread == NULL) {
+        fprintf(stderr, "CreateThread failed: %d\n", GetLastError());
+        free(args);
+        return -1;
+    }
+
+    CloseHandle(thread);
     return 0;
 }
 
@@ -140,29 +175,16 @@ void server_run(ServerState *s)
             continue;
         }
 
-        /* ClientInfo is freed by the thread when the client disconnects */
-        ClientInfo *client = malloc(sizeof(ClientInfo));
-        client->sock    = client_sock;
-        client->id      = ++next_id;
-        client->user_id = -1;
-        strncpy(client->ip, inet_ntoa(client_addr.sin_addr),
-                sizeof(client->ip) - 1);
-
-        ThreadArgs *args = malloc(sizeof(ThreadArgs));
-        args->client = client;
-        args->server = s;
-
-        HANDLE thread = CreateThread(NULL, 0, client_thread, args, 0, NULL);
-        if (thread == NULL) {
-            fprintf(stderr, "CreateThread failed: %d\n", GetLastError());
+        ClientInfo *client = make_client(client_sock, &client_addr, ++next_id);
+        if (!client) {
             closesocket(client_sock);
-            free(client);
-            free(args);
             continue;
         }
 
-        /* Thread manages itself — we don't need the handle */
-        CloseHandle(thread);
+        if (spawn_client_thread(client, s) != 0) {
+            closesocket(client_sock);
+            free(client);
+        }
     }
 }
 
