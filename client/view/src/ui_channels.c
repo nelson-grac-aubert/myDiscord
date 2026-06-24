@@ -1,13 +1,13 @@
 #include "../include/ui_channels.h"
 #include "channel.h"
-#include "../include/ui_login.h" // pour draw_text
+#include "../include/ui_login.h" // For draw_text
 #include <stdio.h>
 
 SDL_Rect btn_logout;
 SDL_Rect btn_add_channel;
 
 void channels_clear_textures(void) {
-    // Plus rien à nettoyer !
+    // Nothing left to clear!
 }
 
 void channels_update_layout(ChatLayout *layout, int win_h) {
@@ -18,14 +18,15 @@ void channels_update_layout(ChatLayout *layout, int win_h) {
 }
 
 void channels_draw_sidebar(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *font_title, TTF_Font *font_main, TTF_Font *font_sub, int mx, int my, SDL_Color white_color, SDL_Color gray_color, SDL_Color dark_gray) {
-    (void)dark_gray; // 💡 Dis au compilateur que c'est normal si elle n'est pas utilisée ici !
-    // --- 1. EN-TÊTE DE LA SIDEBAR ---
-    draw_text(renderer, font_title, "Salons textuels", layout->sidebar_channels.x + 15, 15, white_color);
+    (void)dark_gray; // Inform the compiler that it's normal if this is not used here!
+    
+    // --- 1. SIDEBAR HEADER ---
+    draw_text(renderer, font_title, "Text Channels", layout->sidebar_channels.x + 15, 15, white_color);
 
     int is_add_hovered = (mx >= btn_add_channel.x && mx <= btn_add_channel.x + btn_add_channel.w && my >= btn_add_channel.y && my <= btn_add_channel.y + btn_add_channel.w);
     draw_text(renderer, font_title, "+", btn_add_channel.x, btn_add_channel.y - 3, is_add_hovered ? white_color : gray_color);
 
-    // --- 2. LISTE DES SALONS DEPUIS LE MODÈLE ---
+    // --- 2. CHANNELS LIST FROM MODEL ---
     int channel_y = 60;
     int ch_count = channel_model_get_count();
 
@@ -53,7 +54,7 @@ void channels_draw_sidebar(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font 
         channel_y += 32;
     }
 
-    // --- 3. RENDU DU BOUTON DÉCONNEXION ---
+    // --- 3. LOGOUT BUTTON RENDERING ---
     int h_log = (mx >= btn_logout.x && mx <= btn_logout.x + btn_logout.w && my >= btn_logout.y && my <= btn_logout.y + btn_logout.h);
     if (h_log) {
         SDL_SetRenderDrawColor(renderer, 0xDA, 0x37, 0x3C, 0xFF);
@@ -63,6 +64,6 @@ void channels_draw_sidebar(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font 
     SDL_RenderFillRect(renderer, &btn_logout);
     
     int text_w = 0;
-    TTF_SizeUTF8(font_sub, "Déconnexion", &text_w, NULL);
-    draw_text(renderer, font_sub, "Déconnexion", btn_logout.x + (btn_logout.w - text_w) / 2, btn_logout.y + 8, white_color);
+    TTF_SizeUTF8(font_sub, "Log Out", &text_w, NULL);
+    draw_text(renderer, font_sub, "Log Out", btn_logout.x + (btn_logout.w - text_w) / 2, btn_logout.y + 8, white_color);
 }

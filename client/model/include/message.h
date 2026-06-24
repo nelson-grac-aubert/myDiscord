@@ -11,13 +11,13 @@ typedef struct {
     char text[MAX_MSG_LENGTH];
 } Message;
 
-// Initialise le cache local des messages avec quelques exemples
+// Initializes the local message cache with sample data
 void message_model_init(void);
 
-// Récupère l'ensemble des messages liés à un salon spécifique (via channel_id)
+// Retrieves all messages bound to a specific channel (via channel_id)
 int message_model_get_for_channel(int channel_id, Message* out_messages, int max_out);
 
-// Actions logiques sur les messages
+// Logical actions on messages
 void message_model_add(int id, int channel_id, const char* username, const char* text);
 void message_model_delete_by_index_in_channel(int channel_id, int index_in_channel);
 

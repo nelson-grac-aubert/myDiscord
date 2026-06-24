@@ -1,6 +1,6 @@
 #include "../include/ui_users.h"
 #include "user.h"
-#include "../include/ui_login.h" // pour draw_text
+#include "../include/ui_login.h" // For draw_text
 #include <stdio.h>
 
 void users_draw_sidebar(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *font_main, TTF_Font *font_sub, SDL_Color green_online, SDL_Color dark_gray) {
@@ -9,7 +9,7 @@ void users_draw_sidebar(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *fo
         int count = user_model_get_online(online_users, MAX_USERS);
 
         char total_str[32];
-        snprintf(total_str, sizeof(total_str), "EN LIGNE — %d", count);
+        snprintf(total_str, sizeof(total_str), "ONLINE — %d", count);
         draw_text(renderer, font_sub, total_str, layout->sidebar_members.x + 20, 20, dark_gray);
 
         int user_y = 55;

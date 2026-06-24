@@ -26,11 +26,11 @@ typedef struct {
     char text_confirm[128];
 } UIState;
 
-// Fonction utilitaire globale de rendu de texte partagée par toutes les vues
+// Global text rendering helper shared across all active views
 void draw_text(SDL_Renderer *renderer, TTF_Font *font, const char *text, int x, int y, SDL_Color color);
 int get_text_width(TTF_Font *font, const char *text);
 
-// Rendu de l'interface graphique de Login / Register
+// Renders the Login / Register multi-tab card frame
 void draw_login_interface(SDL_Renderer *renderer, SDL_Rect card_rect, UIState *state,
                           TTF_Font *font_title, TTF_Font *font_main, TTF_Font *font_sub, TTF_Font *font_label,
                           int is_hovering_button);

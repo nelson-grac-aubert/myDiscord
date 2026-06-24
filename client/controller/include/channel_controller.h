@@ -4,16 +4,16 @@
 #include <SDL2/SDL.h>
 #include "ui_chat.h"
 
-// Gère les clics gauches liés aux salons et à la modale
-void channel_control_left_click(ChatLayout *layout, int cx, int cy);
+// Handles left clicks related to channels and the channel creation modal
+void channel_controller_handle_left_click(ChatLayout *layout, int cx, int cy);
 
-// Gère le clic droit sur la barre des salons (menu contextuel)
-void channel_control_right_click(ChatLayout *layout, int cx, int cy);
+// Handles right clicks on the channels sidebar (context menu)
+void channel_controller_handle_right_click(ChatLayout *layout, int cx, int cy);
 
-// Gère les touches claviers (ex: Backspace pour effacer le texte du salon)
-void channel_control_keydown(ChatLayout *layout, SDL_Keycode key);
+// Handles keyboard inputs (e.g., Backspace to erase channel name text)
+void channel_controller_handle_keydown(ChatLayout *layout, SDL_Keycode key);
 
-// Gère l'ajout de caractères dans le nom du salon
-void channel_control_textinput(ChatLayout *layout, const char *text);
+// Handles character-by-character text input for the channel name
+void channel_controller_handle_textinput(ChatLayout *layout, const char *text);
 
 #endif /* CHANNEL_CONTROLLER_H */

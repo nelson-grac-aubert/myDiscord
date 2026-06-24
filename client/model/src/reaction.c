@@ -22,7 +22,7 @@ int reaction_model_get_for_message(int message_id, Reaction* out_reactions, int 
 }
 
 void reaction_model_add(int message_id, int user_id, const char* emoji) {
-    // Évite les doublons exacts (un utilisateur réagit une seule fois avec le même emoji)
+    // Prevent exact duplicates (a user can only react once with the same emoji)
     for (int i = 0; i < global_reaction_count; i++) {
         if (global_reactions[i].message_id == message_id &&
             global_reactions[i].user_id == user_id &&
@@ -48,7 +48,7 @@ void reaction_model_remove(int message_id, int user_id, const char* emoji) {
             global_reactions[i].user_id == user_id &&
             strcmp(global_reactions[i].emoji, emoji) == 0) {
             
-            // Décale le reste du tableau pour combler le vide
+            // Shift the remaining array elements to fill the gap
             for (int j = i; j < global_reaction_count - 1; j++) {
                 global_reactions[j] = global_reactions[j + 1];
             }

@@ -4,31 +4,31 @@
 #include "ui_chat.h"
 #include <SDL2/SDL.h>
 
-// Initialise l'état initial et charge les textures PNG avec le renderer
+// Initializes the controller state and loads PNG textures using the renderer
 void chat_controller_init(ChatLayout *layout, SDL_Renderer *renderer);
 
-// Libère proprement les textures de boutons chargées en mémoire vidéo
+// Properly frees loaded button textures from video memory
 void chat_controller_destroy(ChatLayout *layout);
 
-// Met à jour les états de survol (hover) à chaque mouvement de la souris
+// Updates hover states on every mouse movement
 void chat_controller_update_hover(ChatLayout *layout, int mx, int my);
 
-// Gère les clics gauches et retourne 2 si on demande une déconnexion globale
+// Handles left clicks and returns 2 if a global logout is requested
 int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy);
 
-// Gère les clics droits pour ouvrir les menus contextuels (salons, membres, messages)
+// Handles right clicks to open context menus (channels, members, messages)
 void chat_controller_handle_right_click(ChatLayout *layout, int cx, int cy);
 
-// Gère les actions sur les éléments du menu contextuel (suppression, mention)
+// Handles actions on context menu items (deletion, mention)
 void chat_controller_handle_menu_action(ChatLayout *layout, int cx, int cy);
 
-// Gère les entrées clavier (Backspace, Entrée pour envoyer)
+// Handles keyboard inputs (Backspace, Enter to send)
 void chat_controller_handle_keydown(ChatLayout *layout, SDL_Keycode sym);
 
-// Gère l'ajout de texte caractère par caractère dans les buffers actifs
+// Handles character-by-character text input into active buffers
 void chat_controller_handle_textinput(ChatLayout *layout, const char *text);
 
-// Getters pour les états du contrôleur (ex: microphone)
+// Getters for controller states (e.g., microphone)
 int chat_controller_is_mic_muted(void);
 
 #endif /* CHAT_CONTROLLER_H */

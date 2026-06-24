@@ -1,10 +1,10 @@
 #include "../include/channel_controller.h"
-#include "../include/ui_chat_store.h"       // Deviendra channel_model.h plus tard
-#include "../include/ui_chat_components.h"  // Pour les rectangles globaux de la modale
+#include "../include/ui_chat_store.h"       // Will become channel_model.h later
+#include "../include/ui_chat_components.h"  // For global modal rectangles
 
-void channel_control_left_click(ChatLayout *layout, int cx, int cy)
+void channel_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
 {
-    // 1. Clic dans la modale de création si elle est affichée
+    // 1. Click inside the channel creation modal if it is active
     if (layout->show_create_modal)
     {
         if (cx >= modal_input_rect.x && cx <= modal_input_rect.x + modal_input_rect.w &&
@@ -28,10 +28,10 @@ void channel_control_left_click(ChatLayout *layout, int cx, int cy)
                 store_add_channel(layout->modal_name_buffer, layout->modal_is_private);
             layout->show_create_modal = 0;
         }
-        return; // Événement consommé par la modale
+        return; // Event consumed by the modal
     }
 
-    // 2. Clic sur le bouton '+' pour ouvrir la modale
+    // 2. Click on the '+' button to open the channel creation modal
     if (cx >= btn_add_channel.x && cx <= btn_add_channel.x + btn_add_channel.w &&
         cy >= btn_add_channel.y && cy <= btn_add_channel.y + btn_add_channel.h)
     {
@@ -42,7 +42,7 @@ void channel_control_left_click(ChatLayout *layout, int cx, int cy)
         return;
     }
 
-    // 3. Clic sur un salon dans la barre latérale
+    // 3. Click on a channel inside the sidebar
     int ch_y = 55;
     for (int i = 0; i < store_get_channel_count(); i++)
     {
@@ -57,7 +57,7 @@ void channel_control_left_click(ChatLayout *layout, int cx, int cy)
     }
 }
 
-void channel_control_right_click(ChatLayout *layout, int cx, int cy)
+void channel_controller_handle_right_click(ChatLayout *layout, int cx, int cy)
 {
     int ch_y = 55;
     for (int i = 0; i < store_get_channel_count(); i++)
@@ -66,7 +66,7 @@ void channel_control_right_click(ChatLayout *layout, int cx, int cy)
         if (cx >= item_rect.x && cx <= item_rect.x + item_rect.w &&
             cy >= item_rect.y && cy <= item_rect.y + item_rect.h)
         {
-            layout->menu_type = 1; // 1 = Menu Salon
+            layout->menu_type = 1; // 1 = Channel Menu
             layout->target_index = i;
             layout->menu_x = cx;
             layout->menu_y = cy;
@@ -76,7 +76,7 @@ void channel_control_right_click(ChatLayout *layout, int cx, int cy)
     }
 }
 
-void channel_control_keydown(ChatLayout *layout, SDL_Keycode key)
+void channel_controller_handle_keydown(ChatLayout *layout, SDL_Keycode key)
 {
     if (layout->show_create_modal && layout->modal_focused_field == 1 && key == SDLK_BACKSPACE)
     {
@@ -86,7 +86,7 @@ void channel_control_keydown(ChatLayout *layout, SDL_Keycode key)
     }
 }
 
-void channel_control_textinput(ChatLayout *layout, const char *text)
+void channel_controller_handle_textinput(ChatLayout *layout, const char *text)
 {
     if (layout->show_create_modal && layout->modal_focused_field == 1)
     {

@@ -7,9 +7,9 @@ static int global_message_count = 0;
 void message_model_init(void) {
     global_message_count = 0;
     
-    // Remplissage d'exemples liés au salon général (channel_id = 1)
-    message_model_add(101, 1, "Nexus_One", "Salut tout le monde ! Bienvenue sur myDiscord !");
-    message_model_add(102, 1, "SARA_X", "Hey ! Stylé le nouveau thème noir/bleu nuit.");
+    // Fill up sample messages bound to the general channel (channel_id = 1)
+    message_model_add(101, 1, "Nexus_One", "Hello everyone! Welcome to myDiscord!");
+    message_model_add(102, 1, "SARA_X", "Hey! The new midnight blue/dark theme looks sleek.");
 }
 
 int message_model_get_for_channel(int channel_id, Message* out_messages, int max_out) {
@@ -26,7 +26,7 @@ int message_model_get_for_channel(int channel_id, Message* out_messages, int max
 }
 
 void message_model_add(int id, int channel_id, const char* username, const char* text) {
-    // Si la structure globale est pleine, on décale les anciens messages (FIFO)
+    // If the global array is full, shift older messages forward (FIFO behavior)
     if (global_message_count >= MAX_MESSAGES) {
         for (int i = 0; i < MAX_MESSAGES - 1; i++) {
             global_messages[i] = global_messages[i + 1];
@@ -49,7 +49,7 @@ void message_model_delete_by_index_in_channel(int channel_id, int index_in_chann
     int current_match = 0;
     int target_global_index = -1;
 
-    // 1. Trouver l'index global correspondant au N-ième message de ce salon
+    // 1. Locate the global index corresponding to the N-th message of this channel
     for (int i = 0; i < global_message_count; i++) {
         if (global_messages[i].channel_id == channel_id) {
             if (current_match == index_in_channel) {
@@ -60,7 +60,7 @@ void message_model_delete_by_index_in_channel(int channel_id, int index_in_chann
         }
     }
 
-    // 2. Supprimer du tableau global si trouvé
+    // 2. Remove from the global array if found
     if (target_global_index != -1) {
         for (int i = target_global_index; i < global_message_count - 1; i++) {
             global_messages[i] = global_messages[i + 1];

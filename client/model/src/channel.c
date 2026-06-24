@@ -9,10 +9,10 @@ void channel_model_init(void) {
     local_channel_count = 0;
     local_active_channel_index = 0;
 
-    // Salons par défaut (ID arbitraires pour le moment, correspondants à la future DB)
-    channel_model_add(1, "général", 0);
+    // Default channels (Arbitrary IDs for now, corresponding to the future DB structure)
+    channel_model_add(1, "general", 0);
     channel_model_add(2, "gaming", 0);
-    channel_model_add(3, "privé-staff", 1);
+    channel_model_add(3, "staff-private", 1);
 }
 
 int channel_model_get_count(void) {

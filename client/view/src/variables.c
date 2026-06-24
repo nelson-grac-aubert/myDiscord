@@ -10,7 +10,7 @@ const SDL_Color VAR_COLOR_DISCORD_BLUE = {0x58, 0x65, 0xF2, 0xFF};
 const SDL_Color VAR_COLOR_TEXT_WHITE   = {0xFF, 0xFF, 0xFF, 0xFF};
 const SDL_Color VAR_COLOR_TEXT_MUTED   = {0x94, 0x9B, 0xA4, 0xFF};
 
-// Paramètres de survol
-const SDL_Color VAR_COLOR_HOVER_LIGHT  = {0xFF, 0xFF, 0xFF, 0x22}; // Voile blanc semi-transparent
-const SDL_Color VAR_COLOR_HOVER_RED    = {0xF2, 0x3F, 0x43, 0xFF}; // Rouge Discord
-const SDL_Color VAR_COLOR_HOVER_ITEM   = {0x35, 0x37, 0x3C, 0xFF}; // Gris surbrillance salon
+// Hover parameters
+const SDL_Color VAR_COLOR_HOVER_LIGHT  = {0xFF, 0xFF, 0xFF, 0x22}; // Semi-transparent white overlay
+const SDL_Color VAR_COLOR_HOVER_RED    = {0xF2, 0x3F, 0x43, 0xFF}; // Discord red
+const SDL_Color VAR_COLOR_HOVER_ITEM   = {0x35, 0x37, 0x3C, 0xFF}; // Light gray channel hover highlight
