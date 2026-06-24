@@ -4,8 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#pragma comment(lib, "ws2_32.lib")
-
 static int init_winsock(void)
 {
     WSADATA wsa;
@@ -191,7 +189,7 @@ static int spawn_client_thread(ClientInfo *client, ServerState *s)
 
     HANDLE thread = CreateThread(NULL, 0, client_thread, args, 0, NULL);
     if (thread == NULL) {
-        fprintf(stderr, "CreateThread failed: %d\n", GetLastError());
+        fprintf(stderr, "CreateThread failed: %lu\n", GetLastError());
         free(args);
         return -1;
     }
