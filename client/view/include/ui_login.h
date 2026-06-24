@@ -1,5 +1,5 @@
-#ifndef LOGIN_H
-#define LOGIN_H
+#ifndef UI_LOGIN_H
+#define UI_LOGIN_H
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
@@ -14,23 +14,25 @@ typedef enum {
     FOCUS_EMAIL,
     FOCUS_USERNAME,
     FOCUS_PASSWORD,
-    FOCUS_CONFIRM 
-} ActiveFocus;
+    FOCUS_CONFIRM
+} FocusField;
 
 typedef struct {
     AuthTab current_tab;
-    ActiveFocus current_focus;
+    FocusField current_focus;
     char text_email[128];
     char text_username[128];
     char text_password[128];
     char text_confirm[128];
 } UIState;
 
+// Fonction utilitaire globale de rendu de texte partagée par toutes les vues
 void draw_text(SDL_Renderer *renderer, TTF_Font *font, const char *text, int x, int y, SDL_Color color);
 int get_text_width(TTF_Font *font, const char *text);
 
+// Rendu de l'interface graphique de Login / Register
 void draw_login_interface(SDL_Renderer *renderer, SDL_Rect card_rect, UIState *state,
                           TTF_Font *font_title, TTF_Font *font_main, TTF_Font *font_sub, TTF_Font *font_label,
                           int is_hovering_button);
 
-#endif /* LOGIN_H */
+#endif /* UI_LOGIN_H */

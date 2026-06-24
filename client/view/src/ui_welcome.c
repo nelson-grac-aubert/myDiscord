@@ -1,9 +1,20 @@
-#include "../include/ui_welcome.h"
-#include "../include/ui_login.h"
+#include "ui_welcome.h"
+#include "ui_login.h"
+#include "ui_chat.h"
+#include "channel.h"
+#include "message.h"
+#include "user.h"
+#include "reaction.h"
 #include <stdio.h>
 #include <string.h>
 
-#define COLOR_BG_OBSIDIAN 0x11, 0x12, 0x14, 0xFF
+#define COLOR_BG_OBSIDIAN 0x1F, 0x20, 0x23, 0xFF // Fond d'écran Discord (derrière la carte)
+
+typedef enum {
+    STATE_AUTH,
+    STATE_CHAT,
+    STATE_EXIT
+} AppState;
 
 int welcome_ui_init_and_run(void)
 {
@@ -16,137 +27,140 @@ int welcome_ui_init_and_run(void)
         return 0;
     }
 
-    SDL_Window *window = SDL_CreateWindow("myDiscord - Welcome", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 450, 620, SDL_WINDOW_SHOWN);
+    SDL_Window *window = SDL_CreateWindow("myDiscord", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 450, 620, SDL_WINDOW_SHOWN);
     SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
-    SDL_Cursor *cursor_arrow = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
-    SDL_Cursor *cursor_hand = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
-    SDL_Cursor *cursor_ibeam = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_IBEAM);
+    channel_model_init();
+    message_model_init();
+    user_model_init();
+    reaction_model_init();
+
+    AppState current_state = STATE_AUTH;
+    SDL_Event event;
 
     UIState ui_state = {.current_tab = TAB_LOGIN, .current_focus = FOCUS_NONE};
     SDL_StartTextInput();
 
-    int running = 1;
-    int connected = 0; 
-    SDL_Event event;
-
-    while (running)
+    while (current_state != STATE_EXIT)
     {
-        SDL_Rect card_rect = {0, 0, 450, 620};
-        SDL_Rect btn_submit = { card_rect.x + (card_rect.w - 370) / 2, card_rect.y + card_rect.h - 65, 370, 45 };
-        
-        SDL_Rect input1 = { card_rect.x + 40, card_rect.y + 180, 370, 40 };
-        SDL_Rect input2 = { card_rect.x + 40, card_rect.y + 270, 370, 40 };
-        SDL_Rect input3 = { card_rect.x + 40, card_rect.y + 360, 370, 40 };
-        SDL_Rect input4 = { card_rect.x + 40, card_rect.y + 450, 370, 40 };
-
-        SDL_Rect tab_login_rect = {card_rect.x, card_rect.y, 225, 45};
-        SDL_Rect tab_reg_rect = {card_rect.x + 225, card_rect.y, 225, 45};
-
-        // Gestion des curseurs au survol (uniquement visuel)
-        int mouse_x, mouse_y;
-        SDL_GetMouseState(&mouse_x, &mouse_y);
-        int is_hovering_button = (mouse_x >= btn_submit.x && mouse_x <= (btn_submit.x + btn_submit.w) && mouse_y >= btn_submit.y && mouse_y <= (btn_submit.y + btn_submit.h));
-
-        if (is_hovering_button ||
-            (mouse_x >= tab_login_rect.x && mouse_x <= (tab_login_rect.x + tab_login_rect.w) && mouse_y >= tab_login_rect.y && mouse_y <= (tab_login_rect.y + tab_login_rect.h)) ||
-            (mouse_x >= tab_reg_rect.x && mouse_x <= (tab_reg_rect.x + tab_reg_rect.w) && mouse_y >= tab_reg_rect.y && mouse_y <= (tab_reg_rect.y + tab_reg_rect.h)))
+        if (current_state == STATE_AUTH)
         {
-            SDL_SetCursor(cursor_hand);
-        }
-        else if ((mouse_x >= input1.x && mouse_x <= (input1.x + input1.w) && mouse_y >= input1.y && mouse_y <= (input1.y + input1.h)) ||
-                 (mouse_x >= input2.x && mouse_x <= (input2.x + input2.w) && mouse_y >= input2.y && mouse_y <= (input2.y + input2.h)) ||
-                 (ui_state.current_tab == TAB_REGISTER && mouse_x >= input3.x && mouse_x <= (input3.x + input3.w) && mouse_y >= input3.y && mouse_y <= (input3.y + input3.h)) ||
-                 (ui_state.current_tab == TAB_REGISTER && mouse_x >= input4.x && mouse_x <= (input4.x + input4.w) && mouse_y >= input4.y && mouse_y <= (input4.y + input4.h)))
-        {
-            SDL_SetCursor(cursor_ibeam);
-        }
-        else { SDL_SetCursor(cursor_arrow); }
-
-        while (SDL_PollEvent(&event))
-        {
-            if (event.type == SDL_QUIT) running = 0;
-
-            if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
+            int auth_running = 1;
+            while (auth_running)
             {
-                int mx = event.button.x; 
-                int my = event.button.y;
+                SDL_Rect card_rect = {0, 0, 450, 620};
+                SDL_Rect btn_submit = { card_rect.x + (card_rect.w - 370) / 2, card_rect.y + card_rect.h - 70, 370, 45 };
+                
+                // Rectangles de détection des clics synchronisés avec ui_login.c
+                SDL_Rect input1 = { card_rect.x + 40, card_rect.y + 195, 370, 40 };
+                SDL_Rect input2 = { card_rect.x + 40, card_rect.y + 285, 370, 40 };
+                SDL_Rect input3 = { card_rect.x + 40, card_rect.y + 375, 370, 40 };
+                SDL_Rect input4 = { card_rect.x + 40, card_rect.y + 465, 370, 40 };
 
-                if (mx >= tab_login_rect.x && mx <= (tab_login_rect.x + tab_login_rect.w) && my >= tab_login_rect.y && my <= (tab_login_rect.y + tab_login_rect.h)) {
-                    ui_state.current_tab = TAB_LOGIN; ui_state.current_focus = FOCUS_NONE;
-                }
-                else if (mx >= tab_reg_rect.x && mx <= (tab_reg_rect.x + tab_reg_rect.w) && my >= tab_reg_rect.y && my <= (tab_reg_rect.y + tab_reg_rect.h)) {
-                    ui_state.current_tab = TAB_REGISTER; ui_state.current_focus = FOCUS_NONE;
-                }
-                else if (mx >= input1.x && mx <= (input1.x + input1.w) && my >= input1.y && my <= (input1.y + input1.h)) {
-                    ui_state.current_focus = FOCUS_EMAIL;
-                }
-                else if (mx >= input2.x && mx <= (input2.x + input2.w) && my >= input2.y && my <= (input2.y + input2.h)) {
-                    ui_state.current_focus = (ui_state.current_tab == TAB_REGISTER) ? FOCUS_USERNAME : FOCUS_PASSWORD;
-                }
-                else if (ui_state.current_tab == TAB_REGISTER && mx >= input3.x && mx <= (input3.x + input3.w) && my >= input3.y && my <= (input3.y + input3.h)) {
-                    ui_state.current_focus = FOCUS_PASSWORD;
-                }
-                else if (ui_state.current_tab == TAB_REGISTER && mx >= input4.x && mx <= (input4.x + input4.w) && my >= input4.y && my <= (input4.y + input4.h)) {
-                    ui_state.current_focus = FOCUS_CONFIRM;
-                }
-                // ➡️ CORRECTION : On utilise mx et my de l'événement précis pour la validation du bouton
-                else if (mx >= btn_submit.x && mx <= (btn_submit.x + btn_submit.w) && my >= btn_submit.y && my <= (btn_submit.y + btn_submit.h)) {
-                    if (ui_state.current_tab == TAB_LOGIN) printf("[UI] Connexion : %s\n", ui_state.text_email);
-                    else printf("[UI] Inscription Pseudo : %s\n", ui_state.text_username);
-                    fflush(stdout);
+                int mx, my;
+                SDL_GetMouseState(&mx, &my);
+                int is_hovering_button = (mx >= btn_submit.x && mx <= btn_submit.x + btn_submit.w && my >= btn_submit.y && my <= btn_submit.y + btn_submit.h);
 
-                    connected = 1;
-                    running = 0; 
-                }
-                else { ui_state.current_focus = FOCUS_NONE; }
-            }
-
-            if (event.type == SDL_KEYDOWN)
-            {
-                if (event.key.keysym.sym == SDLK_BACKSPACE)
+                while (SDL_PollEvent(&event))
                 {
-                    char *buf = NULL;
-                    if (ui_state.current_focus == FOCUS_EMAIL) buf = ui_state.text_email;
-                    else if (ui_state.current_focus == FOCUS_USERNAME) buf = ui_state.text_username;
-                    else if (ui_state.current_focus == FOCUS_PASSWORD) buf = ui_state.text_password;
-                    else if (ui_state.current_focus == FOCUS_CONFIRM) buf = ui_state.text_confirm;
-                    if (buf) { size_t len = strlen(buf); if (len > 0) buf[len - 1] = '\0'; }
-                }
-                if (event.key.keysym.sym == SDLK_TAB)
-                {
-                    if (ui_state.current_tab == TAB_LOGIN) {
-                        ui_state.current_focus = (ui_state.current_focus == FOCUS_EMAIL) ? FOCUS_PASSWORD : FOCUS_EMAIL;
-                    } else {
-                        if (ui_state.current_focus == FOCUS_EMAIL) ui_state.current_focus = FOCUS_USERNAME;
-                        else if (ui_state.current_focus == FOCUS_USERNAME) ui_state.current_focus = FOCUS_PASSWORD;
-                        else if (ui_state.current_focus == FOCUS_PASSWORD) ui_state.current_focus = FOCUS_CONFIRM;
-                        else ui_state.current_focus = FOCUS_EMAIL;
+                    if (event.type == SDL_QUIT) {
+                        auth_running = 0;
+                        current_state = STATE_EXIT;
+                    }
+                    else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
+                    {
+                        int cx = event.button.x;
+                        int cy = event.button.y;
+
+                        if (is_hovering_button) {
+                            auth_running = 0;
+                            current_state = STATE_CHAT;
+                        }
+                        // Onglet "Se connecter"
+                        else if (cx >= 0 && cx <= 225 && cy >= 0 && cy <= 50) {
+                            ui_state.current_tab = TAB_LOGIN;
+                            ui_state.current_focus = FOCUS_NONE;
+                        }
+                        // Onglet "S'inscrire"
+                        else if (cx > 225 && cx <= 450 && cy >= 0 && cy <= 50) {
+                            ui_state.current_tab = TAB_REGISTER;
+                            ui_state.current_focus = FOCUS_NONE;
+                        }
+                        // Sélection des focus selon l'onglet actif
+                        else if (cx >= input1.x && cx <= input1.x + input1.w && cy >= input1.y && cy <= input1.y + input1.h) {
+                            ui_state.current_focus = FOCUS_EMAIL;
+                        }
+                        else if (cx >= input2.x && cx <= input2.x + input2.w && cy >= input2.y && cy <= input2.y + input2.h) {
+                            ui_state.current_focus = (ui_state.current_tab == TAB_LOGIN) ? FOCUS_PASSWORD : FOCUS_USERNAME;
+                        }
+                        else if (ui_state.current_tab == TAB_REGISTER && cx >= input3.x && cx <= input3.x + input3.w && cy >= input3.y && cy <= input3.y + input3.h) {
+                            ui_state.current_focus = FOCUS_PASSWORD;
+                        }
+                        else if (ui_state.current_tab == TAB_REGISTER && cx >= input4.x && cx <= input4.x + input4.w && cy >= input4.y && cy <= input4.y + input4.h) {
+                            ui_state.current_focus = FOCUS_CONFIRM;
+                        }
+                        else {
+                            ui_state.current_focus = FOCUS_NONE;
+                        }
+                    }
+                    else if (event.type == SDL_KEYDOWN)
+                    {
+                        if (event.key.keysym.sym == SDLK_BACKSPACE) {
+                            char *buf = NULL;
+                            if (ui_state.current_focus == FOCUS_EMAIL) buf = ui_state.text_email;
+                            else if (ui_state.current_focus == FOCUS_USERNAME) buf = ui_state.text_username;
+                            else if (ui_state.current_focus == FOCUS_PASSWORD) buf = ui_state.text_password;
+                            else if (ui_state.current_focus == FOCUS_CONFIRM) buf = ui_state.text_confirm;
+                            
+                            if (buf && strlen(buf) > 0) buf[strlen(buf) - 1] = '\0';
+                        }
+                    }
+                    else if (event.type == SDL_TEXTINPUT)
+                    {
+                        char *buf = NULL;
+                        if (ui_state.current_focus == FOCUS_EMAIL) buf = ui_state.text_email;
+                        else if (ui_state.current_focus == FOCUS_USERNAME) buf = ui_state.text_username;
+                        else if (ui_state.current_focus == FOCUS_PASSWORD) buf = ui_state.text_password;
+                        else if (ui_state.current_focus == FOCUS_CONFIRM) buf = ui_state.text_confirm;
+                        
+                        if (buf && (strlen(buf) + strlen(event.text.text) < 127)) {
+                            strcat(buf, event.text.text);
+                        }
                     }
                 }
+
+                SDL_SetRenderDrawColor(renderer, COLOR_BG_OBSIDIAN);
+                SDL_RenderClear(renderer);
+                draw_login_interface(renderer, card_rect, &ui_state, font_title, font_main, font_sub, font_label, is_hovering_button);
+                SDL_RenderPresent(renderer);
             }
 
-            if (event.type == SDL_TEXTINPUT)
-            {
-                char *buf = NULL;
-                if (ui_state.current_focus == FOCUS_EMAIL) buf = ui_state.text_email;
-                else if (ui_state.current_focus == FOCUS_USERNAME) buf = ui_state.text_username;
-                else if (ui_state.current_focus == FOCUS_PASSWORD) buf = ui_state.text_password;
-                else if (ui_state.current_focus == FOCUS_CONFIRM) buf = ui_state.text_confirm;
-                if (buf && (strlen(buf) + strlen(event.text.text) < 127)) strcat(buf, event.text.text);
+            if (current_state == STATE_CHAT) {
+                SDL_SetWindowSize(window, 1200, 750);
+                SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
             }
         }
+        else if (current_state == STATE_CHAT)
+        {
+            int chat_result = run_chat_loop(window, renderer, font_title, font_main, font_sub);
 
-        SDL_SetRenderDrawColor(renderer, COLOR_BG_OBSIDIAN);
-        SDL_RenderClear(renderer);
-        draw_login_interface(renderer, card_rect, &ui_state, font_title, font_main, font_sub, font_label, is_hovering_button);
-        SDL_RenderPresent(renderer);
+            if (chat_result == 2) {
+                current_state = STATE_AUTH;
+                SDL_SetWindowSize(window, 450, 620);
+                SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+            } else {
+                current_state = STATE_EXIT;
+            }
+        }
     }
 
     SDL_StopTextInput();
-    SDL_FreeCursor(cursor_arrow); SDL_FreeCursor(cursor_hand); SDL_FreeCursor(cursor_ibeam);
-    TTF_CloseFont(font_title); TTF_CloseFont(font_main); TTF_CloseFont(font_sub); TTF_CloseFont(font_label);
-    SDL_DestroyRenderer(renderer); SDL_DestroyWindow(window);
+    TTF_CloseFont(font_title);
+    TTF_CloseFont(font_main);
+    TTF_CloseFont(font_sub);
+    TTF_CloseFont(font_label);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
 
-    return connected; 
+    return 0;
 }
