@@ -9,6 +9,7 @@ const SDL_Color VAR_COLOR_MENU_BG      = {0x11, 0x12, 0x14, 0xFF};
 const SDL_Color VAR_COLOR_DISCORD_BLUE = {0x58, 0x65, 0xF2, 0xFF};
 const SDL_Color VAR_COLOR_TEXT_WHITE   = {0xFF, 0xFF, 0xFF, 0xFF};
 const SDL_Color VAR_COLOR_TEXT_MUTED   = {0x94, 0x9B, 0xA4, 0xFF};
+const SDL_Color VAR_COLOR_BG_OBSIDIAN  = {0x1F, 0x20, 0x23, 0xFF};
 
 // Hover parameters
 const SDL_Color VAR_COLOR_HOVER_LIGHT  = {0xFF, 0xFF, 0xFF, 0x22}; // Semi-transparent white overlay

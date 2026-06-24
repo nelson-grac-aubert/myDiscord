@@ -20,6 +20,7 @@ extern const SDL_Color VAR_COLOR_MENU_BG;
 extern const SDL_Color VAR_COLOR_DISCORD_BLUE;
 extern const SDL_Color VAR_COLOR_TEXT_WHITE;
 extern const SDL_Color VAR_COLOR_TEXT_MUTED;
+extern const SDL_Color VAR_COLOR_BG_OBSIDIAN; // Déclaration propre ici
 
 // --- HOVER COLORS AND OPACITIES ---
 extern const SDL_Color VAR_COLOR_HOVER_LIGHT; // Button hover (transparent white)

@@ -1,14 +1,13 @@
 #include "ui_welcome.h"
 #include "ui_login.h"
 #include "ui_chat.h"
+#include "variables.h"  
 #include "channel.h"
 #include "message.h"
 #include "user.h"
 #include "reaction.h"
 #include <stdio.h>
 #include <string.h>
-
-#define COLOR_BG_OBSIDIAN 0x1F, 0x20, 0x23, 0xFF // Discord background color (behind the card)
 
 typedef enum {
     STATE_AUTH,
@@ -27,7 +26,8 @@ int welcome_ui_init_and_run(void)
         return 0;
     }
 
-    SDL_Window *window = SDL_CreateWindow("myDiscord", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 450, 620, SDL_WINDOW_SHOWN);
+    // FIX : La fenêtre fait désormais la taille exacte du formulaire (370x560)
+    SDL_Window *window = SDL_CreateWindow("myDiscord", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 370, 560, SDL_WINDOW_SHOWN);
     SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
     if (!window || !renderer) {
@@ -46,7 +46,8 @@ int welcome_ui_init_and_run(void)
     ui_state.current_tab = TAB_LOGIN;
     ui_state.current_focus = FOCUS_NONE;
 
-    SDL_Rect card_rect = {40, 50, 370, 500};
+    // FIX : La carte commence à (0,0) et remplit 100% de la fenêtre. Plus aucun espace noir !
+    SDL_Rect card_rect = {0, 0, 370, 560};
     int running = 1;
     SDL_Event event;
 
@@ -61,20 +62,19 @@ int welcome_ui_init_and_run(void)
 
         if (current_state == STATE_AUTH) 
         {
-            // Initial UI rendering for Auth
-            SDL_SetRenderDrawColor(renderer, COLOR_BG_OBSIDIAN);
+            // Rendu de l'arrière-plan calqué sur le gris de la carte
+            SDL_SetRenderDrawColor(renderer, 0x2B, 0x2D, 0x31, 0xFF); 
             SDL_RenderClear(renderer);
             draw_login_interface(renderer, card_rect, &ui_state, font_title, font_main, font_sub, font_label, 0);
             SDL_RenderPresent(renderer);
 
-            int auth_done = 0;
             while (current_state == STATE_AUTH && SDL_WaitEvent(&event)) 
             {
                 int mx = 0, my = 0;
                 SDL_GetMouseState(&mx, &my);
 
-                // Check if hovering over the main action button
-                SDL_Rect btn_rect = {card_rect.x + 40, card_rect.y + (ui_state.current_tab == TAB_LOGIN ? 330 : 495), 290, 44};
+                // Bouton de validation
+                SDL_Rect btn_rect = {card_rect.x + 40, card_rect.y + (ui_state.current_tab == TAB_LOGIN ? 300 : 495), 290, 44};
                 int is_hovering_button = (mx >= btn_rect.x && mx <= btn_rect.x + btn_rect.w && my >= btn_rect.y && my <= btn_rect.y + btn_rect.h);
 
                 if (event.type == SDL_QUIT) {
@@ -86,7 +86,7 @@ int welcome_ui_init_and_run(void)
                     int cx = event.button.x;
                     int cy = event.button.y;
 
-                    // Tab switching buttons (Login / Register)
+                    // Onglets Login / Register
                     SDL_Rect tab_l = {card_rect.x, card_rect.y, card_rect.w / 2, 45};
                     SDL_Rect tab_r = {card_rect.x + card_rect.w / 2, card_rect.y, card_rect.w / 2, 45};
 
@@ -99,11 +99,11 @@ int welcome_ui_init_and_run(void)
                         ui_state.current_focus = FOCUS_NONE;
                     }
 
-                    // Input fields boundaries
+                    // Champs de saisie textuelle
                     SDL_Rect input1 = {card_rect.x + 40, card_rect.y + 135, 290, 40};
                     SDL_Rect input2 = {card_rect.x + 40, card_rect.y + 232, 290, 40};
-                    SDL_Rect input3 = {card_rect.x + 40, card_rect.y + 330, 290, 40}; // Only used in register
-                    SDL_Rect input4 = {card_rect.x + 40, card_rect.y + 428, 290, 40}; // Only used in register
+                    SDL_Rect input3 = {card_rect.x + 40, card_rect.y + 330, 290, 40}; 
+                    SDL_Rect input4 = {card_rect.x + 40, card_rect.y + 428, 290, 40}; 
 
                     if (ui_state.current_tab == TAB_LOGIN) {
                         if (cx >= input1.x && cx <= input1.x + input1.w && cy >= input1.y && cy <= input1.y + input1.h)
@@ -125,10 +125,8 @@ int welcome_ui_init_and_run(void)
                             ui_state.current_focus = FOCUS_NONE;
                     }
 
-                    // Validation action click
                     if (is_hovering_button) {
                         current_state = STATE_CHAT;
-                        auth_done = 1;
                     }
                 }
                 else if (event.type == SDL_KEYDOWN) 
@@ -144,7 +142,6 @@ int welcome_ui_init_and_run(void)
                         if (len > 0) buf[len - 1] = '\0';
                     }
                     else if (event.key.keysym.sym == SDLK_TAB) {
-                        // Sequential focus rotation switch
                         if (ui_state.current_tab == TAB_LOGIN) {
                             ui_state.current_focus = (ui_state.current_focus == FOCUS_EMAIL) ? FOCUS_PASSWORD : FOCUS_EMAIL;
                         } else {
@@ -156,7 +153,6 @@ int welcome_ui_init_and_run(void)
                     }
                     else if (event.key.keysym.sym == SDLK_RETURN) {
                         current_state = STATE_CHAT;
-                        auth_done = 1;
                     }
                 }
                 else if (event.type == SDL_TEXTINPUT) 
@@ -172,7 +168,8 @@ int welcome_ui_init_and_run(void)
                     }
                 }
 
-                SDL_SetRenderDrawColor(renderer, COLOR_BG_OBSIDIAN);
+                // Refresh graphique
+                SDL_SetRenderDrawColor(renderer, 0x2B, 0x2D, 0x31, 0xFF);
                 SDL_RenderClear(renderer);
                 draw_login_interface(renderer, card_rect, &ui_state, font_title, font_main, font_sub, font_label, is_hovering_button);
                 SDL_RenderPresent(renderer);
@@ -189,7 +186,8 @@ int welcome_ui_init_and_run(void)
 
             if (chat_result == 2) {
                 current_state = STATE_AUTH;
-                SDL_SetWindowSize(window, 450, 620);
+                // Retour propre au format du formulaire
+                SDL_SetWindowSize(window, 370, 560);
                 SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
             } else {
                 current_state = STATE_EXIT;
