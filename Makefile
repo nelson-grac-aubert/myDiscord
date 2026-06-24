@@ -5,11 +5,12 @@ CFLAGS = -Wall -Wextra -std=c17 \
          -Iclient/model/include \
          -IC:/msys64/ucrt64/include
 
+# 🎛️ Libs : Ajout de -lcomdlg32 pour l'explorateur de fichiers Windows
 LIBS = -LC:/msys64/ucrt64/lib \
-       -lmingw32 -mwindows \
-       -lSDL2main -lSDL2 -lSDL2_ttf -lSDL2_image
-
-# 📂 Liste des fichiers sources avec le bon chemin vers controller/src/ 🌟
+       -lmingw32 \
+       -lSDL2main -lSDL2 -lSDL2_ttf -lSDL2_image -lcomdlg32
+       
+# 📂 Liste des fichiers sources
 SRC = main.c \
       client/view/src/ui_welcome.c \
       client/view/src/ui_login.c \
@@ -30,6 +31,8 @@ all: $(TARGET)
 $(TARGET): $(SRC)
 	$(CC) $(CFLAGS) $(SRC) $(LIBS) -o $(TARGET)
 
+
+# 🧹 Nettoyage compatible Unix/MSYS2 Bash
 clean:
 	rm -f $(TARGET)
 

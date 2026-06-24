@@ -1,6 +1,6 @@
 #ifndef VARIABLES_H
 #define VARIABLES_H
-
+#include <SDL2/SDL_ttf.h>
 #include <SDL2/SDL.h>
 
 // --- FIXED DIMENSIONS & CONFIGURATIONS ---
@@ -26,7 +26,12 @@ extern const SDL_Color VAR_COLOR_BG_OBSIDIAN; // Déclaration propre ici
 extern const SDL_Color VAR_COLOR_HOVER_LIGHT; // Button hover (transparent white)
 extern const SDL_Color VAR_COLOR_HOVER_RED;   // Deletion hover (bright red)
 extern const SDL_Color VAR_COLOR_HOVER_ITEM;  // Channel/message row hover (light gray)
-
+ // --- FONT DECLARATIONS ---
+extern TTF_Font *font_title;
+extern TTF_Font *font_main;
+extern TTF_Font *font_sub;
+extern TTF_Font *font_label;
+extern TTF_Font *font_emoji;
 // --- REAL-TIME HOVER TRACKING STRUCTURE ---
 typedef struct {
     int hover_channel_index;  // Index of the hovered channel (-1 if none)

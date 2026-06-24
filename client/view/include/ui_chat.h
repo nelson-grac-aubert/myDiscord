@@ -22,6 +22,10 @@ typedef struct
     // Geometry bounds for multimedia buttons
     SDL_Rect btn_microphone;
     SDL_Rect btn_file_transfer;
+    
+    // FIX : Ajout des rectangles de collision pour le Log Out et le bouton "+"
+    SDL_Rect btn_logout;
+    SDL_Rect btn_add_channel;
 
     int is_input_focused;
     char input_buffer[MAX_MSG_LENGTH];

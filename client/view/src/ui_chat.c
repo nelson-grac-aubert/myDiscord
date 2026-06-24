@@ -37,6 +37,11 @@ void ui_chat_handle_resize(ChatLayout *layout, int win_w, int win_h) {
     // Geometric positioning of icons inside/along the input bar
     layout->btn_file_transfer = (SDL_Rect){chat_x + 15, win_h - 58, 36, 36};
     layout->btn_microphone = (SDL_Rect){win_w - members_w - 50, win_h - 58, 36, 36};
+    
+    // FIX : Dimensionnement géométrique des nouveaux boutons pour activer la collision
+    layout->btn_add_channel = (SDL_Rect){72 + 210, 14, 20, 20};     // Placé à droite du titre des salons
+    layout->btn_logout = (SDL_Rect){72 + 15, win_h - 50, 36, 36};     // Placé en bas à gauche de la sidebar
+
     channels_update_layout(layout, win_h);
     compute_modal_rects(win_w, win_h);
 }
@@ -117,22 +122,31 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
         draw_text(renderer, font_main, layout->input_buffer, layout->chat_input_bar.x + 15, layout->chat_input_bar.y + 12, color_white);
     }
 
-    // 5. Multimedia Buttons Handling
-    SDL_Texture *current_mic_tex = layout->is_mic_muted ? layout->tex_mic_off : layout->tex_mic_on;
-    if (current_mic_tex) {
+    // 5. FIX : Remplacement des Textures Multimedia par la police de texte Émojis Windows
+    if (font_emoji) {
+        // --- RENDU DU BOUTON MICROPHONE ---
         if (layout->hover.hover_mic_button) {
             SDL_SetRenderDrawColor(renderer, VAR_COLOR_HOVER_LIGHT.r, VAR_COLOR_HOVER_LIGHT.g, VAR_COLOR_HOVER_LIGHT.b, VAR_COLOR_HOVER_LIGHT.a);
             SDL_RenderFillRect(renderer, &layout->btn_microphone);
         }
-        SDL_RenderCopy(renderer, current_mic_tex, NULL, &layout->btn_microphone);
-    }
+        if (layout->is_mic_muted) {
+            draw_text(renderer, font_emoji, "🔇", layout->btn_microphone.x + 6, layout->btn_microphone.y + 6, color_white);
+        } else {
+            draw_text(renderer, font_emoji, "🎤", layout->btn_microphone.x + 6, layout->btn_microphone.y + 6, color_white);
+        }
 
-    if (layout->tex_file) {
+        // --- RENDU DU BOUTON ADDTION DE FICHIER ---
         if (layout->hover.hover_file_button) {
             SDL_SetRenderDrawColor(renderer, VAR_COLOR_HOVER_LIGHT.r, VAR_COLOR_HOVER_LIGHT.g, VAR_COLOR_HOVER_LIGHT.b, VAR_COLOR_HOVER_LIGHT.a);
             SDL_RenderFillRect(renderer, &layout->btn_file_transfer);
         }
-        SDL_RenderCopy(renderer, layout->tex_file, NULL, &layout->btn_file_transfer);
+        draw_text(renderer, font_emoji, "📁", layout->btn_file_transfer.x + 6, layout->btn_file_transfer.y + 6, color_white);
+
+        // --- RENDU DU BOUTON "+" D'AJOUT DE SALON ---
+        draw_text(renderer, font_emoji, "➕", layout->btn_add_channel.x, layout->btn_add_channel.y, color_muted);
+
+        // --- RENDU DU BOUTON LOG OUT ---
+        draw_text(renderer, font_emoji, "🚪", layout->btn_logout.x + 6, layout->btn_logout.y + 6, color_white);
     }
 
     // 6. Context Menu Rendering
