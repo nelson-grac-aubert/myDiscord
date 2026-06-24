@@ -1,6 +1,8 @@
 #include "../include/client_handler.h"
+#include "../include/db.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 static int send_packet(ClientInfo *client, const Packet *pkt)
 {
@@ -22,6 +24,11 @@ static void reply_error(ClientInfo *client, const char *reason)
     Packet pkt;
     packet_build(&pkt, SERVER_ERROR, 1, reason);
     send_packet(client, &pkt);
+}
+
+static int client_is_authenticated(ClientInfo *client)
+{
+    return client->user_id != -1;
 }
 
 void client_handler_dispatch(const Packet *pkt, ClientInfo *client, ServerState *s)
@@ -49,105 +56,306 @@ void client_handler_dispatch(const Packet *pkt, ClientInfo *client, ServerState 
 
 void handler_register(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
-    (void)pkt; (void)s;
-    /* TODO: validate fields, hash password, insert user into DB */
-    printf("[handler] REGISTER from client #%d\n", client->id);
-    reply_ok(client, "register stub");
+    /* Expected fields: email, first_name, last_name, password */
+    if (pkt->field_count < 4) {
+        reply_error(client, "register: missing fields");
+        return;
+    }
+
+    const char *email      = pkt->fields[0];
+    const char *first_name = pkt->fields[1];
+    const char *last_name  = pkt->fields[2];
+    const char *password   = pkt->fields[3];
+
+    int user_id = db_user_register(s->db, email, first_name, last_name, password, 1);
+    if (user_id == -1) {
+        reply_error(client, "register: email already taken or db error");
+        return;
+    }
+
+    client->user_id = user_id;
+    printf("[handler] REGISTER ok: client #%d is now user %d\n", client->id, user_id);
+
+    char resp[32];
+    snprintf(resp, sizeof(resp), "%d", user_id);
+    reply_ok(client, resp);
 }
 
 void handler_login(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
-    (void)pkt; (void)s;
-    /* TODO: look up user in DB, verify password hash, set client->user_id */
-    printf("[handler] LOGIN from client #%d\n", client->id);
-    reply_ok(client, "login stub");
+    /* Expected fields: email, password */
+    if (pkt->field_count < 2) {
+        reply_error(client, "login: missing fields");
+        return;
+    }
+
+    const char *email    = pkt->fields[0];
+    const char *password = pkt->fields[1];
+
+    int user_id = db_user_login(s->db, email, password);
+    if (user_id == -1) {
+        reply_error(client, "login: invalid credentials");
+        return;
+    }
+
+    if (db_user_is_banned(s->db, user_id)) {
+        reply_error(client, "login: account banned");
+        return;
+    }
+
+    client->user_id = user_id;
+    printf("[handler] LOGIN ok: client #%d is now user %d\n", client->id, user_id);
+
+    char resp[32];
+    snprintf(resp, sizeof(resp), "%d", user_id);
+    reply_ok(client, resp);
 }
 
 void handler_logout(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
     (void)pkt; (void)s;
-    /* TODO: clear session, notify other clients */
-    printf("[handler] LOGOUT from client #%d\n", client->id);
-    client->user_id = -1;
-    reply_ok(client, "logout stub");
+    printf("[handler] LOGOUT: user %d\n", client->user_id);
+    client->user_id   = -1;
+    client->channel_id = -1;
+    reply_ok(client, "logged out");
 }
 
 void handler_msg_send(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
-    (void)pkt; (void)s;
-    /* TODO: persist message to DB, broadcast SERVER_PUSH to channel members */
-    printf("[handler] MSG_SEND from client #%d\n", client->id);
-    reply_ok(client, "msg_send stub");
+    if (!client_is_authenticated(client)) {
+        reply_error(client, "msg_send: not authenticated");
+        return;
+    }
+
+    /* Expected fields: content */
+    if (pkt->field_count < 1) {
+        reply_error(client, "msg_send: missing content");
+        return;
+    }
+
+    if (client->channel_id == -1) {
+        reply_error(client, "msg_send: not in a channel");
+        return;
+    }
+
+    int ok = db_message_insert(s->db, client->user_id, client->channel_id, pkt->fields[0]);
+    if (ok != 0) {
+        reply_error(client, "msg_send: db error");
+        return;
+    }
+
+    /* Build push packet and broadcast to everyone in the channel */
+    Packet push;
+    packet_build(&push, SERVER_PUSH, 1, pkt->fields[0]);
+    broadcast_to_channel(&s->registry, client->channel_id, &push);
 }
 
 void handler_msg_history(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
-    (void)pkt; (void)s;
-    /* TODO: query last N messages in channel, send back as SERVER_PUSH packets */
-    printf("[handler] MSG_HISTORY from client #%d\n", client->id);
-    reply_ok(client, "msg_history stub");
+    if (!client_is_authenticated(client)) {
+        reply_error(client, "msg_history: not authenticated");
+        return;
+    }
+
+    /* Expected fields: channel_id, limit */
+    if (pkt->field_count < 2) {
+        reply_error(client, "msg_history: missing fields");
+        return;
+    }
+
+    int channel_id = atoi(pkt->fields[0]);
+    int limit      = atoi(pkt->fields[1]);
+
+    char rows[50][512];
+    int count = db_message_history(s->db, channel_id, limit, rows, 50);
+    if (count < 0) {
+        reply_error(client, "msg_history: db error");
+        return;
+    }
+
+    for (int i = 0; i < count; i++) {
+        Packet push;
+        packet_build(&push, SERVER_PUSH, 1, rows[i]);
+        send_packet(client, &push);
+    }
+
+    reply_ok(client, "msg_history: done");
 }
 
 void handler_reaction(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
     (void)pkt; (void)s;
+    if (!client_is_authenticated(client)) {
+        reply_error(client, "reaction: not authenticated");
+        return;
+    }
     /* TODO: persist reaction to DB, broadcast to channel members */
-    printf("[handler] REACTION from client #%d\n", client->id);
     reply_ok(client, "reaction stub");
 }
 
 void handler_channel_list(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
-    (void)pkt; (void)s;
-    /* TODO: query channels accessible by client->user_id */
-    printf("[handler] CHANNEL_LIST from client #%d\n", client->id);
-    reply_ok(client, "channel_list stub");
+    (void)pkt;
+    if (!client_is_authenticated(client)) {
+        reply_error(client, "channel_list: not authenticated");
+        return;
+    }
+
+    char rows[64][100];
+    int count = db_channel_list(s->db, client->user_id, rows, 64);
+    if (count < 0) {
+        reply_error(client, "channel_list: db error");
+        return;
+    }
+
+    for (int i = 0; i < count; i++) {
+        Packet push;
+        packet_build(&push, SERVER_PUSH, 1, rows[i]);
+        send_packet(client, &push);
+    }
+
+    reply_ok(client, "channel_list: done");
 }
 
 void handler_channel_create(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
-    (void)pkt; (void)s;
-    /* TODO: insert channel into DB, broadcast update to connected clients */
-    printf("[handler] CHANNEL_CREATE from client #%d\n", client->id);
-    reply_ok(client, "channel_create stub");
+    if (!client_is_authenticated(client)) {
+        reply_error(client, "channel_create: not authenticated");
+        return;
+    }
+
+    /* Expected fields: name, is_private */
+    if (pkt->field_count < 2) {
+        reply_error(client, "channel_create: missing fields");
+        return;
+    }
+
+    int is_private = atoi(pkt->fields[1]);
+    int channel_id = db_channel_create(s->db, pkt->fields[0], is_private, client->user_id);
+    if (channel_id == -1) {
+        reply_error(client, "channel_create: db error");
+        return;
+    }
+
+    char resp[16];
+    snprintf(resp, sizeof(resp), "%d", channel_id);
+    reply_ok(client, resp);
 }
 
 void handler_channel_delete(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
-    (void)pkt; (void)s;
-    /* TODO: check permissions, delete channel from DB, notify members */
-    printf("[handler] CHANNEL_DELETE from client #%d\n", client->id);
-    reply_ok(client, "channel_delete stub");
+    if (!client_is_authenticated(client)) {
+        reply_error(client, "channel_delete: not authenticated");
+        return;
+    }
+
+    if (pkt->field_count < 1) {
+        reply_error(client, "channel_delete: missing channel_id");
+        return;
+    }
+
+    int channel_id = atoi(pkt->fields[0]);
+    int ok = db_channel_delete(s->db, channel_id, client->user_id);
+    if (ok != 0) {
+        reply_error(client, "channel_delete: forbidden or db error");
+        return;
+    }
+
+    reply_ok(client, "channel deleted");
 }
 
 void handler_channel_join(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
-    (void)pkt; (void)s;
-    /* TODO: add user to channel membership in DB */
-    printf("[handler] CHANNEL_JOIN from client #%d\n", client->id);
-    reply_ok(client, "channel_join stub");
+    if (!client_is_authenticated(client)) {
+        reply_error(client, "channel_join: not authenticated");
+        return;
+    }
+
+    if (pkt->field_count < 1) {
+        reply_error(client, "channel_join: missing channel_id");
+        return;
+    }
+
+    int channel_id = atoi(pkt->fields[0]);
+    db_channel_join(s->db, client->user_id, channel_id);
+    client->channel_id = channel_id;
+
+    printf("[handler] user %d joined channel %d\n", client->user_id, channel_id);
+    reply_ok(client, "joined");
 }
 
 void handler_channel_leave(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
-    (void)pkt; (void)s;
-    /* TODO: remove user from channel membership in DB */
-    printf("[handler] CHANNEL_LEAVE from client #%d\n", client->id);
-    reply_ok(client, "channel_leave stub");
+    if (!client_is_authenticated(client)) {
+        reply_error(client, "channel_leave: not authenticated");
+        return;
+    }
+
+    if (pkt->field_count < 1) {
+        reply_error(client, "channel_leave: missing channel_id");
+        return;
+    }
+
+    int channel_id = atoi(pkt->fields[0]);
+    db_channel_leave(s->db, client->user_id, channel_id);
+
+    if (client->channel_id == channel_id)
+        client->channel_id = -1;
+
+    reply_ok(client, "left");
 }
 
 void handler_user_list(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
-    (void)pkt; (void)s;
-    /* TODO: query users in given channel */
-    printf("[handler] USER_LIST from client #%d\n", client->id);
-    reply_ok(client, "user_list stub");
+    if (!client_is_authenticated(client)) {
+        reply_error(client, "user_list: not authenticated");
+        return;
+    }
+
+    if (pkt->field_count < 1) {
+        reply_error(client, "user_list: missing channel_id");
+        return;
+    }
+
+    int channel_id = atoi(pkt->fields[0]);
+    char rows[64][100];
+    int count = db_user_list(s->db, channel_id, rows, 64);
+    if (count < 0) {
+        reply_error(client, "user_list: db error");
+        return;
+    }
+
+    for (int i = 0; i < count; i++) {
+        Packet push;
+        packet_build(&push, SERVER_PUSH, 1, rows[i]);
+        send_packet(client, &push);
+    }
+
+    reply_ok(client, "user_list: done");
 }
 
 void handler_user_ban(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
-    (void)pkt; (void)s;
-    /* TODO: check admin permissions, set banned flag in DB, disconnect target */
-    printf("[handler] USER_BAN from client #%d\n", client->id);
-    reply_ok(client, "user_ban stub");
+    if (!client_is_authenticated(client)) {
+        reply_error(client, "user_ban: not authenticated");
+        return;
+    }
+
+    /* Expected fields: target_user_id, reason */
+    if (pkt->field_count < 2) {
+        reply_error(client, "user_ban: missing fields");
+        return;
+    }
+
+    int target_id = atoi(pkt->fields[0]);
+    const char *reason = pkt->fields[1];
+
+    int ok = db_user_ban(s->db, target_id, client->user_id, reason);
+    if (ok != 0) {
+        reply_error(client, "user_ban: db error");
+        return;
+    }
+
+    printf("[handler] user %d banned user %d\n", client->user_id, target_id);
+    reply_ok(client, "banned");
 }
