@@ -16,7 +16,6 @@ SRC = main.c \
       client/view/src/ui_users.c \
       client/view/src/ui_chat.c
 
-# 💡 Ajout de l'extension .exe pour être propre sous Windows
 TARGET = myDiscord.exe
 
 all: $(TARGET)
@@ -25,7 +24,6 @@ $(TARGET): $(SRC)
 	$(CC) $(CFLAGS) $(SRC) $(LIBS) -o $(TARGET)
 
 clean:
-# ➡️ FIX : Remplacement de 'del /f' par 'rm -f' pour le terminal UCRT64 (Bash)
 	rm -f $(TARGET)
 
 .PHONY: all clean

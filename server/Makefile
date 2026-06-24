@@ -1,10 +1,13 @@
 CC     = gcc
 CFLAGS = -Wall -Wextra -std=c17 -O2 -I./include -IC:/msys64/ucrt64/include
-LIBS   = -LC:/msys64/ucrt64/lib -lpq -lws2_32
+LIBS   = -LC:/msys64/ucrt64/lib -lpq -lssl -lcrypto -lws2_32
 
 SRC = src/server_main.c \
       src/server.c \
-      src/packet.c
+      src/packet.c \
+      src/client_handler.c \
+      src/db.c \
+      src/crypto.c
 
 TARGET = myDiscord_server.exe
 
