@@ -48,6 +48,14 @@ typedef struct
     SDL_Texture *tex_file;
 
     ChatHoverState hover;
+    int hover_channel_delete_index;
+    int hover_message_delete_index;
+    SDL_Rect btn_delete_channel_rect;
+    SDL_Rect btn_delete_message_rect;
+    int show_context_menu;
+    int context_menu_x;
+    int context_menu_y;
+    char modal_buffer[256];
 } ChatLayout;
 
 // Global coordinates for modal layouts shared with controllers

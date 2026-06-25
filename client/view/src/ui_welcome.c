@@ -140,9 +140,19 @@ int welcome_ui_init_and_run(void)
                             ui_state.current_focus = FOCUS_NONE;
                     }
 
+                    // CORRECTION : Gestion du clic sur le bouton principal selon l'onglet actif
                     if (is_hovering_button)
                     {
-                        current_state = STATE_CHAT;
+                        if (ui_state.current_tab == TAB_LOGIN)
+                        {
+                            current_state = STATE_CHAT;
+                        }
+                        else if (ui_state.current_tab == TAB_REGISTER)
+                        {
+                            printf("[AUTH] Inscription validée. Redirection vers l'onglet de connexion.\n");
+                            ui_state.current_tab = TAB_LOGIN;
+                            ui_state.current_focus = FOCUS_NONE;
+                        }
                     }
                 }
                 else if (event.type == SDL_KEYDOWN)
@@ -181,9 +191,19 @@ int welcome_ui_init_and_run(void)
                                 ui_state.current_focus = FOCUS_EMAIL;
                         }
                     }
-                    else if (event.key.keysym.sym == SDLK_RETURN)
+                    // CORRECTION : Gestion de la touche Entrée selon l'onglet actif
+                    else if (event.key.keysym.sym == SDLK_RETURN || event.key.keysym.sym == SDLK_KP_ENTER)
                     {
-                        current_state = STATE_CHAT;
+                        if (ui_state.current_tab == TAB_LOGIN)
+                        {
+                            current_state = STATE_CHAT;
+                        }
+                        else if (ui_state.current_tab == TAB_REGISTER)
+                        {
+                            printf("[AUTH] Inscription validée via Entrée. Redirection vers l'onglet de connexion.\n");
+                            ui_state.current_tab = TAB_LOGIN;
+                            ui_state.current_focus = FOCUS_NONE;
+                        }
                     }
                 }
                 else if (event.type == SDL_TEXTINPUT)
