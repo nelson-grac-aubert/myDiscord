@@ -20,8 +20,8 @@ void channel_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
             cy >= modal_btn_cancel.y && cy <= modal_btn_cancel.y + modal_btn_cancel.h)
             layout->show_create_modal = 0;
 
-        if (cx >= modal_btn_confirm.x && cx <= modal_btn_confirm.x + modal_btn_confirm.w &&
-            cy >= modal_btn_confirm.y && cy <= modal_btn_confirm.y + modal_btn_confirm.h) {
+        if (cx >= modal_btn_ok.x && cx <= modal_btn_ok.x + modal_btn_ok.w &&
+            cy >= modal_btn_ok.y && cy <= modal_btn_ok.y + modal_btn_ok.h) {
             if (strlen(layout->modal_name_buffer) > 0)
                 channel_model_add(0, layout->modal_name_buffer, layout->modal_is_private);
             layout->show_create_modal = 0;
