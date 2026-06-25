@@ -20,7 +20,7 @@ typedef struct
     SDL_Rect chat_input_bar;
 
     // Geometry bounds for multimedia buttons
-    SDL_Rect btn_microphone;
+    SDL_Rect btn_call;
     SDL_Rect btn_file_transfer;
     
     // FIX : Ajout des rectangles de collision pour le Log Out et le bouton "+"

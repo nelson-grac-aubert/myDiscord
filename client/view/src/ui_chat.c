@@ -40,7 +40,7 @@ void ui_chat_handle_resize(ChatLayout *layout, int win_w, int win_h)
     layout->btn_add_channel = (SDL_Rect){72 + 205, 14, 24, 24};
 
     // Micro placé juste à droite de la barre de message
-    layout->btn_microphone = (SDL_Rect){layout->chat_input_bar.x + layout->chat_input_bar.w + 10, win_h - 56, 36, 36};
+    layout->btn_call = (SDL_Rect){layout->chat_input_bar.x + layout->chat_input_bar.w + 10, win_h - 56, 36, 36};
     layout->btn_logout = (SDL_Rect){win_w - 180, win_h - 55, 160, 40};
 
     channels_update_layout(layout, win_h);
@@ -262,23 +262,20 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
         }
         draw_text(renderer, font_emoji, "➡️", send_x + 6, send_y + 6, is_send_hovered ? color_white : color_muted);
 
-        // Émoji : Microphone 🎤 / 🔇
-        int is_mic_hovered = (mx >= layout->btn_microphone.x && mx <= layout->btn_microphone.x + layout->btn_microphone.w &&
-                              my >= layout->btn_microphone.y && my <= layout->btn_microphone.y + layout->btn_microphone.h);
-        if (is_mic_hovered && !layout->show_create_modal)
+        // Émoji : Bouton Appel 📞
+        int is_call_hovered = (mx >= layout->btn_call.x && mx <= layout->btn_call.x + layout->btn_call.w &&
+                               my >= layout->btn_call.y && my <= layout->btn_call.y + layout->btn_call.h);
+        if (is_call_hovered && !layout->show_create_modal)
         {
             SDL_SetRenderDrawColor(renderer, hover_bg_color.r, hover_bg_color.g, hover_bg_color.b, hover_bg_color.a);
-            SDL_RenderFillRect(renderer, &layout->btn_microphone);
+            SDL_RenderFillRect(renderer, &layout->btn_call);
         }
-        SDL_Color mic_color = is_mic_hovered ? color_white : color_muted;
-        if (layout->is_mic_muted)
-        {
-            draw_text(renderer, font_emoji, "🔇", layout->btn_microphone.x + 6, layout->btn_microphone.y + 6, mic_color);
-        }
-        else
-        {
-            draw_text(renderer, font_emoji, "🎤", layout->btn_microphone.x + 6, layout->btn_microphone.y + 6, mic_color);
-        }
+
+        // Au survol, le bouton devient blanc, sinon il reste grisé
+        SDL_Color call_color = is_call_hovered ? color_white : color_muted;
+
+        // On affiche l'icône d'appel
+        draw_text(renderer, font_emoji, "📞", layout->btn_call.x + 6, layout->btn_call.y + 6, call_color);
 
         // Bouton : Log Out 🚪
         int is_logout_hovered = (mx >= layout->btn_logout.x && mx <= layout->btn_logout.x + layout->btn_logout.w &&

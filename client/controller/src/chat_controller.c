@@ -1,6 +1,7 @@
 #include "chat_controller.h"
 #include "channel.h"
 #include "message.h"
+#include "ui_call.h"
 #include "ui_channels.h"
 #include <string.h>
 #include <stdio.h>
@@ -10,14 +11,15 @@
 #include <commdlg.h>
 #endif
 
+static SDL_Renderer *current_renderer = NULL;
+
 extern SDL_Rect modal_bg_rect, modal_input_rect, modal_toggle_rect, modal_btn_ok, modal_btn_cancel;
 
-static int g_is_mic_muted = 0;
 static void open_file_explorer(void);
 
 void chat_controller_init(ChatLayout *layout, SDL_Renderer *renderer)
 {
-    (void)renderer;
+    current_renderer = renderer;
     layout->menu_type = 0;
     layout->show_create_modal = 0;
     layout->input_buffer[0] = '\0';
@@ -108,13 +110,16 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
         return 0;
     }
 
-    // 4. BOUTON MICROPHONE (Positionné à côté de Log Out)
-    if (cx >= layout->btn_microphone.x && cx <= layout->btn_microphone.x + layout->btn_microphone.w &&
-        cy >= layout->btn_microphone.y && cy <= layout->btn_microphone.y + layout->btn_microphone.h)
+    // 4. BOUTON APPEL 📞
+    if (cx >= layout->btn_call.x && cx <= layout->btn_call.x + layout->btn_call.w &&
+        cy >= layout->btn_call.y && cy <= layout->btn_call.y + layout->btn_call.h)
     {
-        g_is_mic_muted = !g_is_mic_muted;
-        layout->is_mic_muted = g_is_mic_muted;
-        return 0;
+        // 1. Ouvrir l'interface de l'appel avec le renderer statique et les polices globales
+        ouvrir_fenetre_appel(current_renderer, font_title, font_main, font_sub, font_emoji, layout->window_w, layout->window_h);
+
+        printf("📞 Clic sur le bouton Appel : Ouverture de la fenêtre d'appel...\n");
+
+        return 1; // On retourne 1 pour indiquer que l'événement de clic a été géré
     }
 
     // 5. BOUTON TRANSFERT DE FICHIER
