@@ -3,10 +3,11 @@
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
+#include "message.h"
+#include "variables.h" // Included to integrate ChatHoverState and constants
 
-#define MAX_MSG_LENGTH 256
-
-typedef struct {
+typedef struct
+{
     int window_w;
     int window_h;
 
@@ -18,57 +19,50 @@ typedef struct {
     SDL_Rect chat_top_bar;
     SDL_Rect chat_input_bar;
 
+    // Geometry bounds for multimedia buttons
+    SDL_Rect btn_microphone;
+    SDL_Rect btn_file_transfer;
+    
+    // FIX : Ajout des rectangles de collision pour le Log Out et le bouton "+"
+    SDL_Rect btn_logout;
+    SDL_Rect btn_add_channel;
+
+    int is_input_focused;
     char input_buffer[MAX_MSG_LENGTH];
-    int  is_input_focused;
 
-    /* channel creation modal */
-    int  show_create_modal;
+    int show_create_modal;
     char modal_name_buffer[32];
-    int  modal_is_private;
-    int  modal_focused_field;
+    int modal_is_private;
+    int modal_focused_field; // Added for field focus management
+    int target_index;        // Added for deletion/context targets
 
-    /* right-click context menu: 0 = none, 1 = channel, 2 = message */
-    int      menu_type;
-    int      menu_x, menu_y;
-    int      target_index;
+    int menu_type;
+    int menu_x;
+    int menu_y;
     SDL_Rect menu_rect;
 
-    /* ======================================================= */
-    /* ➡️ AJOUTS : NOUVELLES FONCTIONNALITÉS (IMAGES EN ASSETS/) */
-    /* ======================================================= */
-    
-    // Textures des icônes chargées depuis assets/
-    SDL_Texture* tex_add_channel;
-    SDL_Texture* tex_add_file;
-    SDL_Texture* tex_microphone;
+    // --- MULTIMEDIA & CENTRALIZED HOVER EXTENSIONS ---
+    int is_mic_muted;
+    SDL_Texture *tex_mic_on;
+    SDL_Texture *tex_mic_off;
+    SDL_Texture *tex_file;
 
-    // Rectangles de collision pour les clics souris
-    SDL_Rect rect_btn_add_channel;
-    SDL_Rect rect_btn_add_file;
-    SDL_Rect rect_btn_microphone;
-
-    // Gestion de l'envoi de fichier
-    int  has_attached_file;
-    char attached_file_name[256];
-    SDL_Rect rect_file_preview_close; // Petit bouton [X] pour annuler le fichier
-
-    // Gestion de la pop-up de mention @
-    int      show_mention_popup;
-    int      selected_mention_index;
-    SDL_Rect mention_popup_rect;
-
-    // Gestion du menu microphone et audio
-    int      show_audio_menu;
-    int      selected_micro_index;
-    int      micro_count;
-    char     micro_names[10][128]; // Stocke jusqu'à 10 périphériques détectés
-    SDL_Rect audio_menu_rect;
-
+    ChatHoverState hover;
 } ChatLayout;
 
-void update_chat_layout(ChatLayout *layout, int win_w, int win_h);
+// Global coordinates for modal layouts shared with controllers
+extern SDL_Rect modal_input_rect;
+extern SDL_Rect modal_toggle_rect;
+extern SDL_Rect modal_btn_cancel;
+extern SDL_Rect modal_btn_confirm;
+
+// Recalculates responsive zones when window resizes
+void ui_chat_handle_resize(ChatLayout *layout, int win_w, int win_h);
+
+// Main rendering routine for the central Discord dashboard view
 void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout,
-                         TTF_Font *font_title, TTF_Font *font_main, TTF_Font *font_sub,
-                         int mx, int my);
+                         TTF_Font *font_title, TTF_Font *font_main, TTF_Font *font_sub);
+
+int run_chat_loop(SDL_Window *window, SDL_Renderer *renderer, TTF_Font *font_title, TTF_Font *font_main, TTF_Font *font_sub);
 
 #endif /* UI_CHAT_H */

@@ -1,75 +1,69 @@
 #include "../include/ui_channels.h"
-#include "../include/ui_chat_store.h"
-#include "../include/ui_chat_components.h"
+#include "channel.h"
+#include "../include/ui_login.h" // For draw_text
 #include <stdio.h>
 
-// Seul le bouton déconnexion est conservé
 SDL_Rect btn_logout;
+SDL_Rect btn_add_channel;
 
-// Conservée vide pour éviter de casser les appels dans ui_chat.c
 void channels_clear_textures(void) {
-    // Plus rien à nettoyer !
+    // Nothing left to clear!
 }
 
 void channels_update_layout(ChatLayout *layout, int win_h) {
-    // On donne une vraie forme de bouton rectangulaire large en bas de la barre
-    int btn_w = layout->sidebar_channels.w - 32; // Prend presque toute la largeur
-    int btn_h = 36;                             // Hauteur confortable pour cliquer
-    
+    int btn_w = layout->sidebar_channels.w - 32;
+    int btn_h = 36;
     btn_logout = (SDL_Rect){layout->sidebar_channels.x + 16, win_h - 52, btn_w, btn_h};
-
-    // Positionnement du bouton '+' pour créer un salon
     btn_add_channel = (SDL_Rect){layout->sidebar_channels.x + layout->sidebar_channels.w - 35, 18, 20, 20};
 }
 
 void channels_draw_sidebar(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *font_title, TTF_Font *font_main, TTF_Font *font_sub, int mx, int my, SDL_Color white_color, SDL_Color gray_color, SDL_Color dark_gray) {
+    (void)dark_gray; // Inform the compiler that it's normal if this is not used here!
     
-    // --- 1. DESSIN DU TITRE ET DU BOUTON '+' ---
-    components_draw_text(renderer, font_sub, "SALONS TEXTUELS", layout->sidebar_channels.x + 15, 20, dark_gray);
-    
-    int hover_add = (mx >= btn_add_channel.x && mx <= btn_add_channel.x + btn_add_channel.w && my >= btn_add_channel.y && my <= btn_add_channel.y + btn_add_channel.h);
-    if (hover_add && !layout->show_create_modal) {
-        components_draw_text(renderer, font_title, "+", btn_add_channel.x, btn_add_channel.y - 2, white_color);
-    } else {
-        components_draw_text(renderer, font_title, "+", btn_add_channel.x, btn_add_channel.y - 2, gray_color);
-    }
+    // --- 1. SIDEBAR HEADER ---
+    draw_text(renderer, font_title, "Text Channels", layout->sidebar_channels.x + 15, 15, white_color);
 
-    // --- 2. RENDU DE LA LISTE DES SALONS ---
-    int channel_y = 55;
-    for (int i = 0; i < store_get_channel_count(); i++) {
-        LocalChannel *ch = store_get_channel(i);
+    int is_add_hovered = (mx >= btn_add_channel.x && mx <= btn_add_channel.x + btn_add_channel.w && my >= btn_add_channel.y && my <= btn_add_channel.y + btn_add_channel.w);
+    draw_text(renderer, font_title, "+", btn_add_channel.x, btn_add_channel.y - 3, is_add_hovered ? white_color : gray_color);
+
+    // --- 2. CHANNELS LIST FROM MODEL ---
+    int channel_y = 60;
+    int ch_count = channel_model_get_count();
+
+    for (int i = 0; i < ch_count; i++) {
+        Channel *ch = channel_model_get_by_index(i);
         if (!ch) continue;
 
         char ch_display[64];
         snprintf(ch_display, sizeof(ch_display), "%s  %s", ch->is_private ? "🔒" : "#", ch->name);
 
-        // Zone récursive de sélection identique à celle de ui_chat.c
         SDL_Rect item_rect = {layout->sidebar_channels.x + 8, channel_y - 4, layout->sidebar_channels.w - 16, 28};
         int is_hovered = (mx >= item_rect.x && mx <= item_rect.x + item_rect.w && my >= item_rect.y && my <= item_rect.y + item_rect.h);
 
-        if (i == store_get_active_index()) {
+        if (i == channel_model_get_active_index()) {
             SDL_SetRenderDrawColor(renderer, 0x1F, 0x23, 0x33, 0xFF); 
             SDL_RenderFillRect(renderer, &item_rect);
-            components_draw_text(renderer, font_main, ch_display, layout->sidebar_channels.x + 15, channel_y, white_color);
+            draw_text(renderer, font_main, ch_display, layout->sidebar_channels.x + 15, channel_y, white_color);
         } else if (is_hovered && !layout->show_create_modal) {
             SDL_SetRenderDrawColor(renderer, 0x1F, 0x23, 0x33, 0x80); 
             SDL_RenderFillRect(renderer, &item_rect);
-            components_draw_text(renderer, font_main, ch_display, layout->sidebar_channels.x + 15, channel_y, white_color);
+            draw_text(renderer, font_main, ch_display, layout->sidebar_channels.x + 15, channel_y, white_color);
         } else {
-            components_draw_text(renderer, font_main, ch_display, layout->sidebar_channels.x + 15, channel_y, gray_color);
+            draw_text(renderer, font_main, ch_display, layout->sidebar_channels.x + 15, channel_y, gray_color);
         }
         channel_y += 32;
     }
 
-    // --- 3. RENDU DU BOUTON DÉCONNEXION (RECTANGLE ROUGE + TEXTE) ---
+    // --- 3. LOGOUT BUTTON RENDERING ---
     int h_log = (mx >= btn_logout.x && mx <= btn_logout.x + btn_logout.w && my >= btn_logout.y && my <= btn_logout.y + btn_logout.h);
-    
-    if (h_log && !layout->show_create_modal) {
-        SDL_SetRenderDrawColor(renderer, 242, 63, 67, 255); 
+    if (h_log) {
+        SDL_SetRenderDrawColor(renderer, 0xDA, 0x37, 0x3C, 0xFF);
     } else {
-        SDL_SetRenderDrawColor(renderer, 166, 38, 41, 255); 
+        SDL_SetRenderDrawColor(renderer, 0xA9, 0x1D, 0x22, 0xFF);
     }
-    
     SDL_RenderFillRect(renderer, &btn_logout);
-    components_draw_text(renderer, font_sub, "Déconnexion", btn_logout.x + 58, btn_logout.y + 10, white_color);
+    
+    int text_w = 0;
+    TTF_SizeUTF8(font_sub, "Log Out", &text_w, NULL);
+    draw_text(renderer, font_sub, "Log Out", btn_logout.x + (btn_logout.w - text_w) / 2, btn_logout.y + 8, white_color);
 }
