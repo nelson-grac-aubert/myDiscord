@@ -37,7 +37,6 @@ void channel_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
         layout->modal_is_private = 0;
         layout->modal_focused_field = 1;
         layout->modal_name_buffer[0] = '\0';
-        return 0; // On renvoie 0 pour indiquer que le clic a été traité sans changement de vue
     }
 
     int ch_y = 55;
