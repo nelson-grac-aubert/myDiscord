@@ -29,13 +29,15 @@ void channel_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
         return;
     }
 
+   // Click on the '+' button to open the channel creation modal
     if (cx >= layout->btn_add_channel.x && cx <= layout->btn_add_channel.x + layout->btn_add_channel.w &&
-        cy >= layout->btn_add_channel.y && cy <= layout->btn_add_channel.y + layout->btn_add_channel.h) {
-        layout->show_create_modal    = 1;
-        layout->modal_is_private     = 0;
-        layout->modal_focused_field  = 1;
+        cy >= layout->btn_add_channel.y && cy <= layout->btn_add_channel.y + layout->btn_add_channel.h)
+    {
+        layout->show_create_modal = 1;
+        layout->modal_is_private = 0;
+        layout->modal_focused_field = 1;
         layout->modal_name_buffer[0] = '\0';
-        return;
+        return 0; // On renvoie 0 pour indiquer que le clic a été traité sans changement de vue
     }
 
     int ch_y = 55;

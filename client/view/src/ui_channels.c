@@ -3,67 +3,70 @@
 #include "../include/ui_login.h" // For draw_text
 #include <stdio.h>
 
-SDL_Rect btn_logout;
-SDL_Rect btn_add_channel;
-
-void channels_clear_textures(void) {
-    // Nothing left to clear!
+void channels_clear_textures(void)
+{
+    // Rien à libérer
 }
 
-void channels_update_layout(ChatLayout *layout, int win_h) {
-    int btn_w = layout->sidebar_channels.w - 32;
-    int btn_h = 36;
-    btn_logout = (SDL_Rect){layout->sidebar_channels.x + 16, win_h - 52, btn_w, btn_h};
-    btn_add_channel = (SDL_Rect){layout->sidebar_channels.x + layout->sidebar_channels.w - 35, 18, 20, 20};
+void channels_update_layout(ChatLayout *layout, int win_h)
+{
+    (void)win_h;
+    // CORRECTIF CENTRAL : On écrit directement dans la structure partagée lue par le contrôleur
+    layout->btn_add_channel = (SDL_Rect){layout->sidebar_channels.x + layout->sidebar_channels.w - 35, 14, 24, 24};
 }
+void channels_draw_sidebar(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *font_title, TTF_Font *font_main, TTF_Font *font_sub, TTF_Font *font_emoji, int mx, int my, SDL_Color white_color, SDL_Color gray_color, SDL_Color dark_gray)
+{
+    (void)dark_gray;
+    (void)font_sub;
 
-void channels_draw_sidebar(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *font_title, TTF_Font *font_main, TTF_Font *font_sub, int mx, int my, SDL_Color white_color, SDL_Color gray_color, SDL_Color dark_gray) {
-    (void)dark_gray; // Inform the compiler that it's normal if this is not used here!
-    
-    // --- 1. SIDEBAR HEADER ---
+    // --- 1. TITRE DE LA SIDEBAR ---
     draw_text(renderer, font_title, "Text Channels", layout->sidebar_channels.x + 15, 15, white_color);
 
-    int is_add_hovered = (mx >= btn_add_channel.x && mx <= btn_add_channel.x + btn_add_channel.w && my >= btn_add_channel.y && my <= btn_add_channel.y + btn_add_channel.w);
-    draw_text(renderer, font_title, "+", btn_add_channel.x, btn_add_channel.y - 3, is_add_hovered ? white_color : gray_color);
-
-    // --- 2. CHANNELS LIST FROM MODEL ---
+    // --- 2. LISTE DES SALONS ---
     int channel_y = 60;
     int ch_count = channel_model_get_count();
 
-    for (int i = 0; i < ch_count; i++) {
+    for (int i = 0; i < ch_count; i++)
+    {
         Channel *ch = channel_model_get_by_index(i);
-        if (!ch) continue;
-
-        char ch_display[64];
-        snprintf(ch_display, sizeof(ch_display), "%s  %s", ch->is_private ? "🔒" : "#", ch->name);
+        if (!ch)
+            continue;
 
         SDL_Rect item_rect = {layout->sidebar_channels.x + 8, channel_y - 4, layout->sidebar_channels.w - 16, 28};
         int is_hovered = (mx >= item_rect.x && mx <= item_rect.x + item_rect.w && my >= item_rect.y && my <= item_rect.y + item_rect.h);
 
-        if (i == channel_model_get_active_index()) {
-            SDL_SetRenderDrawColor(renderer, 0x1F, 0x23, 0x33, 0xFF); 
+        // 1. On détermine la couleur du texte (blanc si actif/survolé, gris sinon)
+        SDL_Color current_color = gray_color;
+
+        if (i == channel_model_get_active_index())
+        {
+            SDL_SetRenderDrawColor(renderer, 0x1F, 0x23, 0x33, 0xFF);
             SDL_RenderFillRect(renderer, &item_rect);
-            draw_text(renderer, font_main, ch_display, layout->sidebar_channels.x + 15, channel_y, white_color);
-        } else if (is_hovered && !layout->show_create_modal) {
-            SDL_SetRenderDrawColor(renderer, 0x1F, 0x23, 0x33, 0x80); 
-            SDL_RenderFillRect(renderer, &item_rect);
-            draw_text(renderer, font_main, ch_display, layout->sidebar_channels.x + 15, channel_y, white_color);
-        } else {
-            draw_text(renderer, font_main, ch_display, layout->sidebar_channels.x + 15, channel_y, gray_color);
+            current_color = white_color;
         }
+        else if (is_hovered && !layout->show_create_modal)
+        {
+            SDL_SetRenderDrawColor(renderer, 0x1F, 0x23, 0x33, 0x80);
+            SDL_RenderFillRect(renderer, &item_rect);
+            current_color = white_color;
+        }
+
+        // 2. CORRECTION AFFICHAGE : Dessin séparé pour le Cadenas et le Texte
+        if (ch->is_private)
+        {
+            // On dessine le cadenas avec la police emoji
+            draw_text(renderer, font_emoji, "🔒", layout->sidebar_channels.x + 15, channel_y, current_color);
+            // On dessine le nom du salon décalé de 30 pixels vers la droite avec la police principale
+            draw_text(renderer, font_main, ch->name, layout->sidebar_channels.x + 45, channel_y, current_color);
+        }
+        else
+        {
+            // Salon normal : on garde le fonctionnement avec le dièse "#"
+            char ch_display[64];
+            snprintf(ch_display, sizeof(ch_display), "#  %s", ch->name);
+            draw_text(renderer, font_main, ch_display, layout->sidebar_channels.x + 15, channel_y, current_color);
+        }
+
         channel_y += 32;
     }
-
-    // --- 3. LOGOUT BUTTON RENDERING ---
-    int h_log = (mx >= btn_logout.x && mx <= btn_logout.x + btn_logout.w && my >= btn_logout.y && my <= btn_logout.y + btn_logout.h);
-    if (h_log) {
-        SDL_SetRenderDrawColor(renderer, 0xDA, 0x37, 0x3C, 0xFF);
-    } else {
-        SDL_SetRenderDrawColor(renderer, 0xA9, 0x1D, 0x22, 0xFF);
-    }
-    SDL_RenderFillRect(renderer, &btn_logout);
-    
-    int text_w = 0;
-    TTF_SizeUTF8(font_sub, "Log Out", &text_w, NULL);
-    draw_text(renderer, font_sub, "Log Out", btn_logout.x + (btn_logout.w - text_w) / 2, btn_logout.y + 8, white_color);
 }

@@ -18,7 +18,7 @@ SRC = main.c \
       client/view/src/ui_users.c \
       client/view/src/ui_chat.c \
       client/view/src/variables.c \
-      client/controller/src/auth_controller.c \
+      client/view/src/ui_call.c \
       client/controller/src/chat_controller.c \
       client/controller/src/channel_controller.c \
       client/model/src/channel.c \

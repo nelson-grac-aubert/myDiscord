@@ -19,7 +19,8 @@ typedef struct
     SDL_Rect chat_top_bar;
     SDL_Rect chat_input_bar;
 
-    SDL_Rect btn_microphone;
+    // Geometry bounds for multimedia buttons
+    SDL_Rect btn_call;
     SDL_Rect btn_file_transfer;
     SDL_Rect btn_logout;
     SDL_Rect btn_add_channel;
@@ -44,6 +45,14 @@ typedef struct
     SDL_Texture *tex_file;
 
     ChatHoverState hover;
+    int hover_channel_delete_index;
+    int hover_message_delete_index;
+    SDL_Rect btn_delete_channel_rect;
+    SDL_Rect btn_delete_message_rect;
+    int show_context_menu;
+    int context_menu_x;
+    int context_menu_y;
+    char modal_buffer[256];
 } ChatLayout;
 
 extern SDL_Rect modal_input_rect;
