@@ -2,8 +2,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#pragma comment(lib, "ws2_32.lib")
-
 static int init_winsock(void)
 {
     WSADATA wsa;
@@ -95,7 +93,7 @@ int client_socket_start_listener(ClientSocket *cs)
 
     cs->listener_thread = CreateThread(NULL, 0, listener_thread, cs, 0, NULL);
     if (cs->listener_thread == NULL) {
-        fprintf(stderr, "CreateThread failed: %d\n", GetLastError());
+        fprintf(stderr, "CreateThread failed: %lu\n", GetLastError());
         cs->running = 0;
         return -1;
     }

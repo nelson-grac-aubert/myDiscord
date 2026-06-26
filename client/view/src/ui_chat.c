@@ -8,11 +8,12 @@
 #include "chat_controller.h"
 #include <stdio.h>
 #include <string.h>
+#include <SDL2/SDL_image.h>
 
-// External declarations of rectangles for the shared creation modal
 SDL_Rect modal_bg_rect, modal_input_rect, modal_toggle_rect, modal_btn_ok, modal_btn_cancel;
 
-static void compute_modal_rects(int win_w, int win_h) {
+static void compute_modal_rects(int win_w, int win_h)
+{
     int modal_w = 440, modal_h = 300;
     modal_bg_rect = (SDL_Rect){(win_w - modal_w) / 2, (win_h - modal_h) / 2, modal_w, modal_h};
     modal_input_rect = (SDL_Rect){modal_bg_rect.x + 30, modal_bg_rect.y + 90, 380, 40};
@@ -21,9 +22,9 @@ static void compute_modal_rects(int win_w, int win_h) {
     modal_btn_ok = (SDL_Rect){modal_bg_rect.x + 310, modal_bg_rect.y + 230, 100, 40};
 }
 
-// Implements ui_chat_handle_resize to match the header declaration
-void ui_chat_handle_resize(ChatLayout *layout, int win_w, int win_h) {
-    layout->window_w = win_w; 
+void ui_chat_handle_resize(ChatLayout *layout, int win_w, int win_h)
+{
+    layout->window_w = win_w;
     layout->window_h = win_h;
     layout->sidebar_servers = (SDL_Rect){0, 0, 72, win_h};
     layout->sidebar_channels = (SDL_Rect){72, 0, 240, win_h};
@@ -32,54 +33,124 @@ void ui_chat_handle_resize(ChatLayout *layout, int win_w, int win_h) {
     layout->sidebar_members = (SDL_Rect){win_w - members_w, 0, members_w, win_h};
     layout->chat_area = (SDL_Rect){chat_x, 0, win_w - chat_x - members_w, win_h};
     layout->chat_top_bar = (SDL_Rect){chat_x, 0, layout->chat_area.w, 48};
-    layout->chat_input_bar = (SDL_Rect){chat_x + 60, win_h - 60, layout->chat_area.w - 120, 44};
-    
-    // Geometric positioning of icons inside/along the input bar
-    layout->btn_file_transfer = (SDL_Rect){chat_x + 15, win_h - 58, 36, 36};
-    layout->btn_microphone = (SDL_Rect){win_w - members_w - 50, win_h - 58, 36, 36};
-    
-    // FIX : Dimensionnement géométrique des nouveaux boutons pour activer la collision
-    layout->btn_add_channel = (SDL_Rect){72 + 210, 14, 20, 20};     // Placé à droite du titre des salons
-    layout->btn_logout = (SDL_Rect){72 + 15, win_h - 50, 36, 36};     // Placé en bas à gauche de la sidebar
+
+    // Saisie raccourcie légèrement pour laisser de la place au micro à droite
+    layout->chat_input_bar = (SDL_Rect){chat_x + 60, win_h - 60, layout->chat_area.w - 280, 44};
+
+    layout->btn_file_transfer = (SDL_Rect){chat_x + 15, win_h - 56, 36, 36};
+    layout->btn_add_channel = (SDL_Rect){72 + 205, 14, 24, 24};
+
+    // Micro placé juste à droite de la barre de message
+    layout->btn_call = (SDL_Rect){layout->chat_input_bar.x + layout->chat_input_bar.w + 10, win_h - 56, 36, 36};
+    layout->btn_logout = (SDL_Rect){win_w - 180, win_h - 55, 160, 40};
 
     channels_update_layout(layout, win_h);
     compute_modal_rects(win_w, win_h);
 }
 
-static void draw_chat_messages(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *font_main, SDL_Color white) {
+// Petite fonction utilitaire pour vérifier l'extension
+static int is_image_path(const char *text) {
+    size_t len = strlen(text);
+    if (len < 5) return 0;
+    return (strcasecmp(text + len - 4, ".png") == 0 ||
+            strcasecmp(text + len - 4, ".jpg") == 0 ||
+            strcasecmp(text + len - 5, ".jpeg") == 0);
+}
+
+static void draw_chat_messages(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *font_main, TTF_Font *font_emoji, SDL_Color white)
+{
     Channel *active_ch = channel_model_get_active();
-    if (!active_ch) return;
+    if (!active_ch)
+        return;
 
     int start_y = CHAT_MESSAGES_START_Y;
     Message active_msgs[MAX_MESSAGES];
     int msg_count = message_model_get_for_channel(active_ch->id, active_msgs, MAX_MESSAGES);
 
-    for (int i = 0; i < msg_count; i++) {
-        char full_msg[512];
-        snprintf(full_msg, sizeof(full_msg), "[%s]: %s", active_msgs[i].username, active_msgs[i].text);
-        
-        SDL_Rect row_rect = {layout->chat_area.x + 10, start_y - 2, layout->chat_area.w - 20, MESSAGE_ITEM_HEIGHT};
-        int mx, my;
-        SDL_GetMouseState(&mx, &my);
+    int mx, my;
+    SDL_GetMouseState(&mx, &my);
+
+    layout->hover_message_delete_index = -1;
+
+    // SÉCURITÉ : Activer le Blend Mode pour gérer la transparence des survols
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+
+    for (int i = 0; i < msg_count; i++)
+    {
+        int is_img = is_image_path(active_msgs[i].text);
+        int current_item_height = is_img ? 120 : MESSAGE_ITEM_HEIGHT;
+
+        SDL_Rect row_rect = {layout->chat_area.x + 10, start_y - 2, layout->chat_area.w - 20, current_item_height};
         int is_hovered = (mx >= row_rect.x && mx <= row_rect.x + row_rect.w && my >= row_rect.y && my <= row_rect.y + row_rect.h);
 
-        if (is_hovered && !layout->show_create_modal) {
+        if (is_hovered && !layout->show_create_modal)
+        {
             SDL_SetRenderDrawColor(renderer, VAR_COLOR_HOVER_ITEM.r, VAR_COLOR_HOVER_ITEM.g, VAR_COLOR_HOVER_ITEM.b, VAR_COLOR_HOVER_ITEM.a);
             SDL_RenderFillRect(renderer, &row_rect);
+
+            layout->hover_message_delete_index = i;
+            layout->btn_delete_message_rect = (SDL_Rect){row_rect.x + row_rect.w - 35, start_y, 24, 24};
         }
 
-        draw_text(renderer, font_main, full_msg, layout->chat_area.x + 20, start_y, white);
-        start_y += MESSAGE_ITEM_HEIGHT;
+        if (is_img)
+        {
+            char user_header[128];
+            snprintf(user_header, sizeof(user_header), "[%s]: ", active_msgs[i].username);
+            draw_text(renderer, font_main, user_header, layout->chat_area.x + 20, start_y, white);
+            
+            SDL_Texture *img_tex = NULL;
+            SDL_RWops *rw = SDL_RWFromFile(active_msgs[i].text, "rb");
+            if (rw)
+            {
+                img_tex = IMG_LoadTexture_RW(renderer, rw, 1); 
+            }
+
+            if (img_tex)
+            {
+                SDL_Rect img_target = { layout->chat_area.x + 30, start_y + 22, 140, 80 };
+                SDL_RenderCopy(renderer, img_tex, NULL, &img_target);
+                SDL_DestroyTexture(img_tex);
+            }
+            else
+            {
+                draw_text(renderer, font_main, "<Image introuvable ou corrompue>", layout->chat_area.x + 30, start_y + 22, (SDL_Color){200, 50, 50, 255});
+            }            
+        }
+        else
+        {
+            char full_msg[512];
+            snprintf(full_msg, sizeof(full_msg), "[%s]: %s", active_msgs[i].username, active_msgs[i].text);
+            draw_text(renderer, font_main, full_msg, layout->chat_area.x + 20, start_y, white);
+        }
+
+        if (is_hovered && !layout->show_create_modal && font_emoji)
+        {
+            int mx_poub, my_poub;
+            SDL_GetMouseState(&mx_poub, &my_poub);
+            if (mx_poub >= layout->btn_delete_message_rect.x && mx_poub <= layout->btn_delete_message_rect.x + layout->btn_delete_message_rect.w &&
+                my_poub >= layout->btn_delete_message_rect.y && my_poub <= layout->btn_delete_message_rect.y + layout->btn_delete_message_rect.h)
+            {
+                SDL_SetRenderDrawColor(renderer, 80, 20, 20, 255);
+                SDL_RenderFillRect(renderer, &layout->btn_delete_message_rect);
+            }
+            draw_text(renderer, font_emoji, "🗑️", layout->btn_delete_message_rect.x, layout->btn_delete_message_rect.y, (SDL_Color){220, 50, 50, 255});
+        }
+
+        start_y += current_item_height;
     }
+
+    // SÉCURITÉ : Désactiver le blend mode et restaurer une couleur neutre (ex: Noir opaque)
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
 }
 
-void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *font_title, TTF_Font *font_main, TTF_Font *font_sub) {
+void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *font_title, TTF_Font *font_main, TTF_Font *font_sub)
+{
     SDL_Color color_white = VAR_COLOR_TEXT_WHITE;
     SDL_Color color_muted = VAR_COLOR_TEXT_MUTED;
     int mx, my;
     SDL_GetMouseState(&mx, &my);
 
-    // 1. Draw Layout Panels
     SDL_SetRenderDrawColor(renderer, VAR_COLOR_BG_SERVERS.r, VAR_COLOR_BG_SERVERS.g, VAR_COLOR_BG_SERVERS.b, VAR_COLOR_BG_SERVERS.a);
     SDL_RenderFillRect(renderer, &layout->sidebar_servers);
 
@@ -92,129 +163,259 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
     SDL_SetRenderDrawColor(renderer, VAR_COLOR_BG_MEMBERS.r, VAR_COLOR_BG_MEMBERS.g, VAR_COLOR_BG_MEMBERS.b, VAR_COLOR_BG_MEMBERS.a);
     SDL_RenderFillRect(renderer, &layout->sidebar_members);
 
-    // 2. Chat Top Bar
     SDL_SetRenderDrawColor(renderer, 0x24, 0x25, 0x28, 0xFF);
     SDL_RenderFillRect(renderer, &layout->chat_top_bar);
 
     Channel *active_ch = channel_model_get_active();
-    if (active_ch) {
-        char heading[64];
-        snprintf(heading, sizeof(heading), "# %s", active_ch->name);
-        draw_text(renderer, font_title, heading, layout->chat_top_bar.x + 20, 12, color_white);
+    if (active_ch)
+    {
+        if (active_ch->is_private)
+        {
+            // 1. On dessine le cadenas avec la police emoji
+            if (font_emoji)
+            {
+                draw_text(renderer, font_emoji, "🔒", layout->chat_top_bar.x + 20, 12, color_white);
+            }
+            // 2. On dessine le nom du salon avec la police de titre, décalé pour ne pas chevaucher le cadenas
+            draw_text(renderer, font_title, active_ch->name, layout->chat_top_bar.x + 55, 12, color_white);
+        }
+        else
+        {
+            // Salon public normal : on garde le fonctionnement d'origine avec le dièse "#"
+            char heading[64];
+            snprintf(heading, sizeof(heading), "# %s", active_ch->name);
+            draw_text(renderer, font_title, heading, layout->chat_top_bar.x + 20, 12, color_white);
+        }
     }
 
-    // 3. Components Rendering
-    channels_draw_sidebar(renderer, layout, font_title, font_main, font_sub, mx, my, color_white, color_muted, VAR_COLOR_BG_SERVERS);
+    channels_draw_sidebar(renderer, layout, font_title, font_main, font_sub, font_emoji, mx, my, color_white, color_muted, VAR_COLOR_BG_SERVERS);
     users_draw_sidebar(renderer, layout, font_main, font_sub, (SDL_Color){0x23, 0xA5, 0x5A, 0xFF}, color_muted);
-    draw_chat_messages(renderer, layout, font_main, color_white);
 
-    // 4. Chat Input Bar
+    /// GESTION DU SURVOL / DESSIN CADENAS OU POUBELLE SUR LES SALONS
+    layout->hover_channel_delete_index = -1;
+    if (!layout->show_create_modal && mx >= layout->sidebar_channels.x && mx <= layout->sidebar_channels.x + layout->sidebar_channels.w)
+    {
+        int channel_y = 60;
+        int ch_count = channel_model_get_count();
+        for (int i = 0; i < ch_count; i++)
+        {
+            SDL_Rect item_rect = {layout->sidebar_channels.x + 8, channel_y - 4, layout->sidebar_channels.w - 16, 28};
+            if (mx >= item_rect.x && mx <= item_rect.x + item_rect.w && my >= item_rect.y && my <= item_rect.y + item_rect.h)
+            {
+                layout->hover_channel_delete_index = i;
+                layout->btn_delete_channel_rect = (SDL_Rect){item_rect.x + item_rect.w - 24, channel_y - 2, 20, 20};
+                // --- EFFET DE SURVOL DYNAMIQUE SUR LA POUBELLE ---
+                int mx_poub, my_poub;
+                SDL_GetMouseState(&mx_poub, &my_poub);
+                // On vérifie si la souris est précisément au-dessus de la corbeille
+                int is_bin_hovered = (mx_poub >= layout->btn_delete_channel_rect.x && mx_poub <= layout->btn_delete_channel_rect.x + layout->btn_delete_channel_rect.w &&
+                                      my_poub >= layout->btn_delete_channel_rect.y && my_poub <= layout->btn_delete_channel_rect.y + layout->btn_delete_channel_rect.h);
+
+                SDL_Color trash_color = (SDL_Color){160, 40, 40, 255}; // Couleur rouge plus sombre par défaut
+
+                if (is_bin_hovered)
+                {
+                    // On affiche le fond rouge foncé uniquement si on pointe la corbeille
+                    SDL_SetRenderDrawColor(renderer, 80, 20, 20, 255);
+                    SDL_RenderFillRect(renderer, &layout->btn_delete_channel_rect);
+
+                    // On passe la corbeille en rouge vif
+                    trash_color = (SDL_Color){255, 60, 60, 255};
+                }
+
+                if (font_emoji)
+                {
+                    draw_text(renderer, font_emoji, "🗑️", layout->btn_delete_channel_rect.x, layout->btn_delete_channel_rect.y, trash_color);
+                }
+                break;
+            }
+            channel_y += 32;
+        }
+    }
+
+    draw_chat_messages(renderer, layout, font_main, font_emoji, color_white);
+
     SDL_SetRenderDrawColor(renderer, VAR_COLOR_BG_INPUT.r, VAR_COLOR_BG_INPUT.g, VAR_COLOR_BG_INPUT.b, VAR_COLOR_BG_INPUT.a);
     SDL_RenderFillRect(renderer, &layout->chat_input_bar);
 
-    if (strlen(layout->input_buffer) == 0) {
-        if (active_ch) {
+    if (layout->is_input_focused)
+    {
+        SDL_SetRenderDrawColor(renderer, 0x58, 0x65, 0xF2, 0xFF);
+        SDL_RenderDrawRect(renderer, &layout->chat_input_bar);
+        SDL_Rect interior = {layout->chat_input_bar.x + 1, layout->chat_input_bar.y + 1, layout->chat_input_bar.w - 2, layout->chat_input_bar.h - 2};
+        SDL_RenderDrawRect(renderer, &interior);
+    }
+
+    int text_width = 0;
+    if (strlen(layout->input_buffer) == 0)
+    {
+        if (active_ch)
+        {
             char placeholder[128];
-            snprintf(placeholder, sizeof(placeholder), "Message #%s", active_ch->name);
+            snprintf(placeholder, sizeof(placeholder), "Message %s%s", active_ch->is_private ? "🔒" : "#", active_ch->name);
             draw_text(renderer, font_main, placeholder, layout->chat_input_bar.x + 15, layout->chat_input_bar.y + 12, color_muted);
         }
-    } else {
+    }
+    else
+    {
         draw_text(renderer, font_main, layout->input_buffer, layout->chat_input_bar.x + 15, layout->chat_input_bar.y + 12, color_white);
+        TTF_SizeText(font_main, layout->input_buffer, &text_width, NULL);
     }
 
-    // 5. FIX : Remplacement des Textures Multimedia par la police de texte Émojis Windows
-    if (font_emoji) {
-        // --- RENDU DU BOUTON MICROPHONE ---
-        if (layout->hover.hover_mic_button) {
-            SDL_SetRenderDrawColor(renderer, VAR_COLOR_HOVER_LIGHT.r, VAR_COLOR_HOVER_LIGHT.g, VAR_COLOR_HOVER_LIGHT.b, VAR_COLOR_HOVER_LIGHT.a);
-            SDL_RenderFillRect(renderer, &layout->btn_microphone);
-        }
-        if (layout->is_mic_muted) {
-            draw_text(renderer, font_emoji, "🔇", layout->btn_microphone.x + 6, layout->btn_microphone.y + 6, color_white);
-        } else {
-            draw_text(renderer, font_emoji, "🎤", layout->btn_microphone.x + 6, layout->btn_microphone.y + 6, color_white);
-        }
+    if (layout->is_input_focused && (SDL_GetTicks() / 500) % 2 == 0)
+    {
+        int cursor_x = layout->chat_input_bar.x + 15 + text_width;
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        SDL_RenderDrawLine(renderer, cursor_x, layout->chat_input_bar.y + 12, cursor_x, layout->chat_input_bar.y + 32);
+    }
 
-        // --- RENDU DU BOUTON ADDTION DE FICHIER ---
-        if (layout->hover.hover_file_button) {
-            SDL_SetRenderDrawColor(renderer, VAR_COLOR_HOVER_LIGHT.r, VAR_COLOR_HOVER_LIGHT.g, VAR_COLOR_HOVER_LIGHT.b, VAR_COLOR_HOVER_LIGHT.a);
+    // 5. GESTION DU RECTANGLE DE SURVOL SUR LES EMOJIS
+    if (font_emoji)
+    {
+        // Couleur du fond au survol (Gris clair transparent Discord style)
+        SDL_Color hover_bg_color = {0x35, 0x37, 0x3C, 255};
+
+        // Émoji : Ajouter Salon ➕
+        int is_add_hovered = (mx >= layout->btn_add_channel.x && mx <= layout->btn_add_channel.x + layout->btn_add_channel.w &&
+                              my >= layout->btn_add_channel.y && my <= layout->btn_add_channel.y + layout->btn_add_channel.h);
+        if (is_add_hovered && !layout->show_create_modal)
+        {
+            SDL_SetRenderDrawColor(renderer, hover_bg_color.r, hover_bg_color.g, hover_bg_color.b, hover_bg_color.a);
+            SDL_RenderFillRect(renderer, &layout->btn_add_channel);
+        }
+        draw_text(renderer, font_emoji, "➕", layout->btn_add_channel.x, layout->btn_add_channel.y, is_add_hovered ? color_white : color_muted);
+
+        // Émoji : Transfert de Fichier ➕ (dans la barre)
+        int is_file_hovered = (mx >= layout->btn_file_transfer.x && mx <= layout->btn_file_transfer.x + layout->btn_file_transfer.w &&
+                               my >= layout->btn_file_transfer.y && my <= layout->btn_file_transfer.y + layout->btn_file_transfer.h);
+        if (is_file_hovered && !layout->show_create_modal)
+        {
+            SDL_SetRenderDrawColor(renderer, hover_bg_color.r, hover_bg_color.g, hover_bg_color.b, hover_bg_color.a);
             SDL_RenderFillRect(renderer, &layout->btn_file_transfer);
         }
-        draw_text(renderer, font_emoji, "📁", layout->btn_file_transfer.x + 6, layout->btn_file_transfer.y + 6, color_white);
+        draw_text(renderer, font_emoji, "➕", layout->btn_file_transfer.x + 6, layout->btn_file_transfer.y + 6, is_file_hovered ? color_white : color_muted);
 
-        // --- RENDU DU BOUTON "+" D'AJOUT DE SALON ---
-        draw_text(renderer, font_emoji, "➕", layout->btn_add_channel.x, layout->btn_add_channel.y, color_muted);
-
-        // --- RENDU DU BOUTON LOG OUT ---
-        draw_text(renderer, font_emoji, "🚪", layout->btn_logout.x + 6, layout->btn_logout.y + 6, color_white);
-    }
-
-    // 6. Context Menu Rendering
-    if (layout->menu_type > 0) {
-        SDL_SetRenderDrawColor(renderer, VAR_COLOR_MENU_BG.r, VAR_COLOR_MENU_BG.g, VAR_COLOR_MENU_BG.b, VAR_COLOR_MENU_BG.a);
-        SDL_RenderFillRect(renderer, &layout->menu_rect);
-        
-        SDL_Rect item_rect = {layout->menu_rect.x + 5, layout->menu_rect.y + 5, layout->menu_rect.w - 10, 26};
-        if (layout->hover.hover_menu_action) {
-            SDL_SetRenderDrawColor(renderer, VAR_COLOR_HOVER_RED.r, VAR_COLOR_HOVER_RED.g, VAR_COLOR_HOVER_RED.b, VAR_COLOR_HOVER_RED.a);
-            SDL_RenderFillRect(renderer, &item_rect);
+        // Émoji : Envoyer le message ➡️
+        int send_x = layout->chat_input_bar.x + layout->chat_input_bar.w - 45;
+        int send_y = layout->window_h - 56;
+        SDL_Rect btn_send_rect = {send_x, send_y, 36, 36};
+        int is_send_hovered = (mx >= send_x && mx <= send_x + 36 && my >= send_y && my <= send_y + 36);
+        if (is_send_hovered && !layout->show_create_modal)
+        {
+            SDL_SetRenderDrawColor(renderer, hover_bg_color.r, hover_bg_color.g, hover_bg_color.b, hover_bg_color.a);
+            SDL_RenderFillRect(renderer, &btn_send_rect);
         }
-        draw_text(renderer, font_sub, "Delete", item_rect.x + 10, item_rect.y + 5, color_white);
+        draw_text(renderer, font_emoji, "➡️", send_x + 6, send_y + 6, is_send_hovered ? color_white : color_muted);
+
+        // Émoji : Bouton Appel 📞
+        int is_call_hovered = (mx >= layout->btn_call.x && mx <= layout->btn_call.x + layout->btn_call.w &&
+                               my >= layout->btn_call.y && my <= layout->btn_call.y + layout->btn_call.h);
+        if (is_call_hovered && !layout->show_create_modal)
+        {
+            SDL_SetRenderDrawColor(renderer, hover_bg_color.r, hover_bg_color.g, hover_bg_color.b, hover_bg_color.a);
+            SDL_RenderFillRect(renderer, &layout->btn_call);
+        }
+
+        // Au survol, le bouton devient blanc, sinon il reste grisé
+        SDL_Color call_color = is_call_hovered ? color_white : color_muted;
+
+        // On affiche l'icône d'appel
+        draw_text(renderer, font_emoji, "📞", layout->btn_call.x + 6, layout->btn_call.y + 6, call_color);
+
+        // Bouton : Log Out 🚪
+        int is_logout_hovered = (mx >= layout->btn_logout.x && mx <= layout->btn_logout.x + layout->btn_logout.w &&
+                                 my >= layout->btn_logout.y && my <= layout->btn_logout.y + layout->btn_logout.h);
+        if (is_logout_hovered)
+        {
+            SDL_SetRenderDrawColor(renderer, 240, 71, 71, 255);
+        }
+        else
+        {
+            SDL_SetRenderDrawColor(renderer, 170, 30, 30, 255);
+        }
+        SDL_RenderFillRect(renderer, &layout->btn_logout);
+        draw_text(renderer, font_emoji, "🚪", layout->btn_logout.x + 15, layout->btn_logout.y + 6, color_white);
+        draw_text(renderer, font_sub, "Log Out", layout->btn_logout.x + 50, layout->btn_logout.y + 10, color_white);
     }
 
-    // 7. Channel Creation Modal
-    if (layout->show_create_modal) {
-        // Dark translucent background layer
+    // 6. Modale de création
+    if (layout->show_create_modal)
+    {
         SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 180);
-        SDL_Rect overlay = {0, 0, layout->window_w, layout->window_h};
-        SDL_RenderFillRect(renderer, &overlay);
+        SDL_RenderFillRect(renderer, NULL);
+        SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 
-        // Modal Frame Box
-        SDL_SetRenderDrawColor(renderer, VAR_COLOR_BG_CHANNELS.r, VAR_COLOR_BG_CHANNELS.g, VAR_COLOR_BG_CHANNELS.b, VAR_COLOR_BG_CHANNELS.a);
+        SDL_SetRenderDrawColor(renderer, 0x31, 0x33, 0x38, 0xFF);
         SDL_RenderFillRect(renderer, &modal_bg_rect);
 
         draw_text(renderer, font_title, "Create a Channel", modal_bg_rect.x + 30, modal_bg_rect.y + 25, color_white);
         draw_text(renderer, font_sub, "CHANNEL NAME", modal_bg_rect.x + 30, modal_bg_rect.y + 70, color_muted);
 
-        // Text input field box
-        SDL_SetRenderDrawColor(renderer, VAR_COLOR_BG_SERVERS.r, VAR_COLOR_BG_SERVERS.g, VAR_COLOR_BG_SERVERS.b, VAR_COLOR_BG_SERVERS.a);
+        SDL_SetRenderDrawColor(renderer, 0x1E, 0x1F, 0x22, 0xFF);
         SDL_RenderFillRect(renderer, &modal_input_rect);
 
-        if (strlen(layout->modal_name_buffer) == 0) {
-            draw_text(renderer, font_main, "new-channel", modal_input_rect.x + 12, modal_input_rect.y + 10, color_muted);
-        } else {
-            draw_text(renderer, font_main, layout->modal_name_buffer, modal_input_rect.x + 12, modal_input_rect.y + 10, color_white);
-        }
-
-        // Focus visual indicator line
-        if (layout->modal_focused_field == 1) {
-            SDL_SetRenderDrawColor(renderer, VAR_COLOR_DISCORD_BLUE.r, VAR_COLOR_DISCORD_BLUE.g, VAR_COLOR_DISCORD_BLUE.b, VAR_COLOR_DISCORD_BLUE.a);
+        if (layout->modal_focused_field)
+        {
+            SDL_SetRenderDrawColor(renderer, 0x58, 0x65, 0xF2, 0xFF);
             SDL_RenderDrawRect(renderer, &modal_input_rect);
+            SDL_Rect interior_modal = {modal_input_rect.x + 1, modal_input_rect.y + 1, modal_input_rect.w - 2, modal_input_rect.h - 2};
+            SDL_RenderDrawRect(renderer, &interior_modal);
         }
 
-        // Toggle Private Switch Label
-        draw_text(renderer, font_main, "🔒 Private Channel", modal_bg_rect.x + 30, modal_bg_rect.y + 162, color_white);
-        if (layout->modal_is_private) {
-            SDL_SetRenderDrawColor(renderer, 0x23, 0xA5, 0x5A, 0xFF); // Green active switch
-        } else {
-            SDL_SetRenderDrawColor(renderer, 0x80, 0x84, 0x8E, 0xFF); // Gray inactive switch
+        int modal_text_width = 0;
+        if (strlen(layout->modal_buffer) == 0)
+        {
+            draw_text(renderer, font_main, "new-channel", modal_input_rect.x + 12, modal_input_rect.y + 10, color_muted);
         }
-        SDL_RenderFillRect(renderer, &modal_toggle_rect);
+        else
+        {
+            draw_text(renderer, font_main, layout->modal_buffer, modal_input_rect.x + 12, modal_input_rect.y + 10, color_white);
+            TTF_SizeText(font_main, layout->modal_buffer, &modal_text_width, NULL);
+        }
 
-        // Cancel Button Action
-        SDL_SetRenderDrawColor(renderer, 0x4E, 0x50, 0x58, 0xFF);
-        SDL_RenderFillRect(renderer, &modal_btn_cancel);
-        draw_text(renderer, font_sub, "Cancel", modal_btn_cancel.x + 24, modal_btn_cancel.y + 11, color_white);
+        if (layout->modal_focused_field && (SDL_GetTicks() / 500) % 2 == 0)
+        {
+            int m_cursor_x = modal_input_rect.x + 12 + modal_text_width;
+            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+            SDL_RenderDrawLine(renderer, m_cursor_x, modal_input_rect.y + 10, m_cursor_x, modal_input_rect.y + 30);
+        }
 
-        // Confirm / Create Button Action
-        SDL_SetRenderDrawColor(renderer, VAR_COLOR_DISCORD_BLUE.r, VAR_COLOR_DISCORD_BLUE.g, VAR_COLOR_DISCORD_BLUE.b, VAR_COLOR_DISCORD_BLUE.a);
+        // On dessine le cadenas d'un côté avec la police emoji, et le texte à côté avec la police principale
+        draw_text(renderer, font_emoji, "🔒", modal_bg_rect.x + 30, modal_bg_rect.y + 162, color_white);
+        draw_text(renderer, font_main, "Private Channel", modal_bg_rect.x + 60, modal_bg_rect.y + 162, color_white); // décalé à +60 pour laisser la place au cadenas
+
+        if (layout->modal_is_private)
+        {
+            SDL_SetRenderDrawColor(renderer, 0x23, 0xA5, 0x5A, 0xFF);
+            SDL_RenderFillRect(renderer, &modal_toggle_rect);
+            SDL_Rect knob = {modal_toggle_rect.x + 26, modal_toggle_rect.y + 3, 20, 20};
+            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+            SDL_RenderFillRect(renderer, &knob);
+        }
+        else
+        {
+            SDL_SetRenderDrawColor(renderer, 0x80, 0x84, 0x8E, 0xFF);
+            SDL_RenderFillRect(renderer, &modal_toggle_rect);
+            SDL_Rect knob = {modal_toggle_rect.x + 4, modal_toggle_rect.y + 3, 20, 20};
+            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+            SDL_RenderFillRect(renderer, &knob);
+        }
+
+        SDL_Rect footer_rect = {modal_bg_rect.x, modal_bg_rect.y + 215, modal_bg_rect.w, 85};
+        SDL_SetRenderDrawColor(renderer, 0x2B, 0x2D, 0x31, 0xFF);
+        SDL_RenderFillRect(renderer, &footer_rect);
+
+        draw_text(renderer, font_main, "Cancel", modal_btn_cancel.x + 20, modal_btn_cancel.y + 10, color_white);
+
+        SDL_SetRenderDrawColor(renderer, 0x58, 0x65, 0xF2, 0xFF);
         SDL_RenderFillRect(renderer, &modal_btn_ok);
-        draw_text(renderer, font_sub, "Create", modal_btn_ok.x + 28, modal_btn_ok.y + 11, color_white);
+        draw_text(renderer, font_main, "Create", modal_btn_ok.x + 25, modal_btn_ok.y + 10, color_white);
     }
 }
 
-int run_chat_loop(SDL_Window *window, SDL_Renderer *renderer, TTF_Font *font_title, TTF_Font *font_main, TTF_Font *font_sub) {
+int run_chat_loop(SDL_Window *window, SDL_Renderer *renderer, TTF_Font *font_title, TTF_Font *font_main, TTF_Font *font_sub)
+{
     ChatLayout layout;
     memset(&layout, 0, sizeof(ChatLayout));
 
@@ -225,50 +426,81 @@ int run_chat_loop(SDL_Window *window, SDL_Renderer *renderer, TTF_Font *font_tit
     chat_controller_init(&layout, renderer);
 
     int running = 1;
-    int exit_status = 1; // 1 = Exit application, 2 = Logged out (back to Auth)
+    int exit_status = 1;
     SDL_Event event;
 
     SDL_StartTextInput();
 
-    while (running) {
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT) {
+    while (running)
+    {
+        while (SDL_PollEvent(&event))
+        {
+            if (event.type == SDL_QUIT)
+            {
                 running = 0;
                 exit_status = 1;
             }
-            else if (event.type == SDL_WINDOWEVENT) {
-                if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
+            else if (event.type == SDL_WINDOWEVENT)
+            {
+                if (event.window.event == SDL_WINDOWEVENT_RESIZED)
+                {
                     ui_chat_handle_resize(&layout, event.window.data1, event.window.data2);
                 }
             }
-            else if (event.type == SDL_MOUSEMOTION) {
+            else if (event.type == SDL_MOUSEMOTION)
+            {
                 chat_controller_update_hover(&layout, event.motion.x, event.motion.y);
-            }
-            else if (event.type == SDL_MOUSEBUTTONDOWN) {
-                int cx = event.button.x, cy = event.button.y;
-                if (event.button.button == SDL_BUTTON_RIGHT) {
-                    chat_controller_handle_right_click(&layout, cx, cy);
+
+                int mx = event.motion.x, my = event.motion.y;
+                int over_input_field = 0;
+
+                if (mx >= layout.chat_input_bar.x && mx <= layout.chat_input_bar.x + layout.chat_input_bar.w &&
+                    my >= layout.chat_input_bar.y && my <= layout.chat_input_bar.y + layout.chat_input_bar.h)
+                {
+                    over_input_field = 1;
                 }
-                else if (event.button.button == SDL_BUTTON_LEFT) {
-                    if (layout.menu_type > 0) {
-                        chat_controller_handle_menu_action(&layout, cx, cy);
-                    } else {
-                        int status = chat_controller_handle_left_click(&layout, cx, cy);
-                        if (status == 2) { 
-                            running = 0; 
-                            exit_status = 2; 
-                        }
+                if (layout.show_create_modal &&
+                    mx >= modal_input_rect.x && mx <= modal_input_rect.x + modal_input_rect.w &&
+                    my >= modal_input_rect.y && my <= modal_input_rect.y + modal_input_rect.h)
+                {
+                    over_input_field = 1;
+                }
+
+                SDL_Cursor *cursor;
+                if (over_input_field)
+                {
+                    cursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_IBEAM);
+                }
+                else
+                {
+                    cursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
+                }
+                SDL_SetCursor(cursor);
+            }
+            else if (event.type == SDL_MOUSEBUTTONDOWN)
+            {
+                int cx = event.button.x, cy = event.button.y;
+
+                if (event.button.button == SDL_BUTTON_LEFT)
+                {
+                    int status = chat_controller_handle_left_click(&layout, cx, cy);
+                    if (status == 2)
+                    {
+                        running = 0;
+                        exit_status = 2;
                     }
                 }
             }
-            else if (event.type == SDL_KEYDOWN) {
+            else if (event.type == SDL_KEYDOWN)
+            {
                 chat_controller_handle_keydown(&layout, event.key.keysym.sym);
             }
-            else if (event.type == SDL_TEXTINPUT) {
+            else if (event.type == SDL_TEXTINPUT)
+            {
                 chat_controller_handle_textinput(&layout, event.text.text);
             }
         }
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); 
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
         draw_chat_interface(renderer, &layout, font_title, font_main, font_sub);
         SDL_RenderPresent(renderer);
