@@ -5,7 +5,9 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "C:/Program Files/PostgreSQL/18/include",
-                "C:/msys64/ucrt64/include"
+                "C:/msys64/ucrt64/include",
+                "C:/msys64/ucrt64/include/SDL2",
+                "C:/msys64/ucrt64/include/SDL2/**"
             ],
             "compilerPath": "C:/msys64/mingw64/bin/gcc.exe",
             "defines": [

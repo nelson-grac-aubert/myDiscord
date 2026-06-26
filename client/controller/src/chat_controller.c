@@ -15,7 +15,7 @@ static SDL_Renderer *current_renderer = NULL;
 
 extern SDL_Rect modal_bg_rect, modal_input_rect, modal_toggle_rect, modal_btn_ok, modal_btn_cancel;
 
-static void open_file_explorer(void);
+static char* open_file_explorer(void);
 
 void chat_controller_init(ChatLayout *layout, SDL_Renderer *renderer)
 {
@@ -126,8 +126,22 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
     if (cx >= layout->btn_file_transfer.x && cx <= layout->btn_file_transfer.x + layout->btn_file_transfer.w &&
         cy >= layout->btn_file_transfer.y && cy <= layout->btn_file_transfer.y + layout->btn_file_transfer.h)
     {
-        open_file_explorer();
-        return 0;
+        char* file_path = open_file_explorer();
+        
+        if (file_path != NULL && strlen(file_path) > 0)
+        {
+            printf("📁 Fichier sélectionné pour l'envoi : %s\n", file_path);
+            
+            Channel *active = channel_model_get_active();
+            if (active)
+            {
+                // On ajoute le chemin du fichier dans la liste des messages !
+                // Pour l'instant, on l'envoie comme texte pour vérifier que le chemin est bien transmis.
+                message_model_add(0, active->id, "Me", file_path); 
+            }
+        }
+        
+        return 1;
     }
 
     // FIX : BOUTON ENVOYER LE MESSAGE (Calcul des coordonnées en direct à la place de la structure manquante)
@@ -269,29 +283,40 @@ void chat_controller_handle_textinput(ChatLayout *layout, const char *text)
 
 int chat_controller_is_mic_muted(void) { return g_is_mic_muted; }
 
-static void open_file_explorer(void)
+static char* open_file_explorer(void)
 {
 #ifdef _WIN32
-    OPENFILENAME ofn;
-    char szFile[260] = {0};
+    OPENFILENAMEW ofn;           // Version Wide (Unicode)
+    static wchar_t szFileW[260]; // Buffer en caractères larges
+    static char szFileUTF8[512]; // Buffer final converti en UTF-8
+    
+    memset(szFileW, 0, sizeof(szFileW));
+    memset(szFileUTF8, 0, sizeof(szFileUTF8));
+    
     ZeroMemory(&ofn, sizeof(ofn));
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = NULL;
-    ofn.lpstrFile = szFile;
-    ofn.nMaxFile = sizeof(szFile);
-    ofn.lpstrFilter = "All Files\0*.*\0Text Files\0*.txt\0";
+    ofn.lpstrFile = szFileW;
+    ofn.nMaxFile = 260;
+    // Les filtres doivent aussi être en Wide string (L"...")
+    ofn.lpstrFilter = L"Images (*.png;*.jpg;*.jpeg)\0*.png;*.jpg;*.jpeg\0All Files\0*.*\0";
     ofn.nFilterIndex = 1;
     ofn.lpstrFileTitle = NULL;
     ofn.nMaxFileTitle = 0;
     ofn.lpstrInitialDir = NULL;
     ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
 
-    if (GetOpenFileName(&ofn) == TRUE)
+    if (GetOpenFileNameW(&ofn) == TRUE)
     {
-        printf("[FILE EXPLORER] Selected file: %s\n", ofn.lpstrFile);
+        // Conversion propre du chemin Wide (UTF-16 Windows) vers du bon vieil UTF-8 compatible partout
+        WideCharToMultiByte(CP_UTF8, 0, szFileW, -1, szFileUTF8, sizeof(szFileUTF8), NULL, NULL);
+        printf("[FILE EXPLORER] Selected file (UTF-8): %s\n", szFileUTF8);
+        return szFileUTF8; 
     }
+    return NULL;
 #else
     printf("[FILE EXPLORER] Native explorer only supported on Windows.\n");
+    return NULL;
 #endif
 }
 

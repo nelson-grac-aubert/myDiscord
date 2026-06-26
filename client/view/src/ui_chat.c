@@ -8,6 +8,7 @@
 #include "chat_controller.h"
 #include <stdio.h>
 #include <string.h>
+#include <SDL2/SDL_image.h>
 
 SDL_Rect modal_bg_rect, modal_input_rect, modal_toggle_rect, modal_btn_ok, modal_btn_cancel;
 
@@ -47,6 +48,15 @@ void ui_chat_handle_resize(ChatLayout *layout, int win_w, int win_h)
     compute_modal_rects(win_w, win_h);
 }
 
+// Petite fonction utilitaire pour vérifier l'extension
+static int is_image_path(const char *text) {
+    size_t len = strlen(text);
+    if (len < 5) return 0;
+    return (strcasecmp(text + len - 4, ".png") == 0 ||
+            strcasecmp(text + len - 4, ".jpg") == 0 ||
+            strcasecmp(text + len - 5, ".jpeg") == 0);
+}
+
 static void draw_chat_messages(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *font_main, TTF_Font *font_emoji, SDL_Color white)
 {
     Channel *active_ch = channel_model_get_active();
@@ -62,12 +72,15 @@ static void draw_chat_messages(SDL_Renderer *renderer, ChatLayout *layout, TTF_F
 
     layout->hover_message_delete_index = -1;
 
+    // SÉCURITÉ : Activer le Blend Mode pour gérer la transparence des survols
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+
     for (int i = 0; i < msg_count; i++)
     {
-        char full_msg[512];
-        snprintf(full_msg, sizeof(full_msg), "[%s]: %s", active_msgs[i].username, active_msgs[i].text);
+        int is_img = is_image_path(active_msgs[i].text);
+        int current_item_height = is_img ? 120 : MESSAGE_ITEM_HEIGHT;
 
-        SDL_Rect row_rect = {layout->chat_area.x + 10, start_y - 2, layout->chat_area.w - 20, MESSAGE_ITEM_HEIGHT};
+        SDL_Rect row_rect = {layout->chat_area.x + 10, start_y - 2, layout->chat_area.w - 20, current_item_height};
         int is_hovered = (mx >= row_rect.x && mx <= row_rect.x + row_rect.w && my >= row_rect.y && my <= row_rect.y + row_rect.h);
 
         if (is_hovered && !layout->show_create_modal)
@@ -79,11 +92,39 @@ static void draw_chat_messages(SDL_Renderer *renderer, ChatLayout *layout, TTF_F
             layout->btn_delete_message_rect = (SDL_Rect){row_rect.x + row_rect.w - 35, start_y, 24, 24};
         }
 
-        draw_text(renderer, font_main, full_msg, layout->chat_area.x + 20, start_y, white);
+        if (is_img)
+        {
+            char user_header[128];
+            snprintf(user_header, sizeof(user_header), "[%s]: ", active_msgs[i].username);
+            draw_text(renderer, font_main, user_header, layout->chat_area.x + 20, start_y, white);
+            
+            SDL_Texture *img_tex = NULL;
+            SDL_RWops *rw = SDL_RWFromFile(active_msgs[i].text, "rb");
+            if (rw)
+            {
+                img_tex = IMG_LoadTexture_RW(renderer, rw, 1); 
+            }
+
+            if (img_tex)
+            {
+                SDL_Rect img_target = { layout->chat_area.x + 30, start_y + 22, 140, 80 };
+                SDL_RenderCopy(renderer, img_tex, NULL, &img_target);
+                SDL_DestroyTexture(img_tex);
+            }
+            else
+            {
+                draw_text(renderer, font_main, "<Image introuvable ou corrompue>", layout->chat_area.x + 30, start_y + 22, (SDL_Color){200, 50, 50, 255});
+            }            
+        }
+        else
+        {
+            char full_msg[512];
+            snprintf(full_msg, sizeof(full_msg), "[%s]: %s", active_msgs[i].username, active_msgs[i].text);
+            draw_text(renderer, font_main, full_msg, layout->chat_area.x + 20, start_y, white);
+        }
 
         if (is_hovered && !layout->show_create_modal && font_emoji)
         {
-            // Effet survol pour la poubelle du message
             int mx_poub, my_poub;
             SDL_GetMouseState(&mx_poub, &my_poub);
             if (mx_poub >= layout->btn_delete_message_rect.x && mx_poub <= layout->btn_delete_message_rect.x + layout->btn_delete_message_rect.w &&
@@ -95,8 +136,12 @@ static void draw_chat_messages(SDL_Renderer *renderer, ChatLayout *layout, TTF_F
             draw_text(renderer, font_emoji, "🗑️", layout->btn_delete_message_rect.x, layout->btn_delete_message_rect.y, (SDL_Color){220, 50, 50, 255});
         }
 
-        start_y += MESSAGE_ITEM_HEIGHT;
+        start_y += current_item_height;
     }
+
+    // SÉCURITÉ : Désactiver le blend mode et restaurer une couleur neutre (ex: Noir opaque)
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
 }
 
 void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *font_title, TTF_Font *font_main, TTF_Font *font_sub)
