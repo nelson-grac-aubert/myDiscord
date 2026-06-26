@@ -1,15 +1,18 @@
 /*
  * data/message_crypto.c
  *
- * Appelé par message.c juste avant l'INSERT en base.
- * Branché sur le flux :
- *   ui_chat  →  chat_controller_handle_keydown / handle_left_click
- *            →  message_model_send()   (dans message.c)
- *            →  message_crypto_encrypt_and_insert()   ← ICI
- *            →  INSERT INTO message (encrypted_content, content_iv, ...)
+ * Chiffre le contenu d'un message AVANT packet_build().
+ * Le serveur reçoit et stocke directement le ciphertext en base.
  *
- * Compilation : ajouter à votre Makefile
- *   LDFLAGS += -lssl -lcrypto -lpq
+ * Flux :
+ *   chat_controller
+ *     → message_crypto_encrypt_field(plaintext, cipher_b64, iv_b64)
+ *     → packet_build(MSG_SEND, channel_id, cipher_b64)   ← chiffré
+ *     → client_socket_send()
+ *     → serveur → INSERT message(encrypted_content=cipher_b64, content_iv=iv_b64)
+ *
+ * Compilation : ajouter au Makefile
+ *   LDFLAGS += -lssl -lcrypto
  */
 
 #include "message_crypto.h"
@@ -19,11 +22,12 @@
 #include <openssl/rand.h>
 #include <openssl/bio.h>
 #include <openssl/buffer.h>
-#include <libpq-fe.h>
 
-/* ── Clé AES-256 ────────────────────────────────────────────────────────
- * En production : charger depuis getenv("MSG_AES_KEY") ou un fichier
- * sécurisé. Ne jamais stocker en base.                                  */
+/*
+ * Clé AES-256 partagée client/serveur.
+ * En prod : charger depuis getenv("MSG_AES_KEY").
+ * La même clé doit être sur le serveur pour déchiffrer à l'affichage.
+ */
 static const unsigned char AES_KEY[32] = {
     0x2b,0x7e,0x15,0x16, 0x28,0xae,0xd2,0xa6,
     0xab,0xf7,0x15,0x88, 0x09,0xcf,0x4f,0x3c,
@@ -31,7 +35,7 @@ static const unsigned char AES_KEY[32] = {
     0x10,0xfe,0xdc,0xba, 0x98,0x76,0x54,0x32
 };
 
-/* ── Base64 ─────────────────────────────────────────────────────────── */
+/* ── base64 ─────────────────────────────────────────────────────────── */
 
 static void b64_encode(const unsigned char *in, int len, char *out)
 {
@@ -60,22 +64,27 @@ static int b64_decode(const char *in, unsigned char *out)
     return len;
 }
 
-/* ── Chiffrement ────────────────────────────────────────────────────── */
+/* ── chiffrement ────────────────────────────────────────────────────── */
 
 /*
- * message_crypto_encrypt()
+ * message_crypto_encrypt_field()
  *
- * Entrée  : plaintext   → texte tapé par l'utilisateur dans input_buffer
- * Sorties : iv_b64      → stocké dans  content_iv        (colonne DB)
- *           cipher_b64  → stocké dans  encrypted_content (colonne DB)
- * Retour  : longueur ciphertext brut, -1 si erreur
+ * Chiffre `plaintext` (input_buffer de l'utilisateur).
+ *
+ * Sorties :
+ *   cipher_b64  → va dans fields[1] du paquet MSG_SEND
+ *                 → stocké dans encrypted_content en base
+ *   iv_b64      → à envoyer en fields[2] du paquet MSG_SEND
+ *                 → stocké dans content_iv en base
+ *
+ * Retour : 0 OK, -1 erreur
  */
-int message_crypto_encrypt(const char *plaintext,
-                            char       *iv_b64,
-                            char       *cipher_b64)
+int message_crypto_encrypt_field(const char *plaintext,
+                                  char       *cipher_b64,  /* out ≥ 512  */
+                                  char       *iv_b64)      /* out ≥ 32   */
 {
     unsigned char iv[16];
-    unsigned char cipher[4096];
+    unsigned char cipher[PACKET_FIELD_SIZE + 32];
     int len = 0, ct_len = 0;
 
     if (RAND_bytes(iv, 16) != 1) {
@@ -89,39 +98,44 @@ int message_crypto_encrypt(const char *plaintext,
     if (EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, AES_KEY, iv) != 1) goto err;
     if (EVP_EncryptUpdate(ctx, cipher, &len,
                           (const unsigned char *)plaintext,
-                          (int)strlen(plaintext)) != 1)                   goto err;
+                          (int)strlen(plaintext)) != 1)                        goto err;
     ct_len = len;
-    if (EVP_EncryptFinal_ex(ctx, cipher + len, &len) != 1)                goto err;
+    if (EVP_EncryptFinal_ex(ctx, cipher + len, &len) != 1)                     goto err;
     ct_len += len;
     EVP_CIPHER_CTX_free(ctx);
 
     b64_encode(iv,     16,     iv_b64);
     b64_encode(cipher, ct_len, cipher_b64);
-    return ct_len;
+    return 0;
 
 err:
     EVP_CIPHER_CTX_free(ctx);
     return -1;
 }
 
-/* ── Déchiffrement ──────────────────────────────────────────────────── */
+/* ── déchiffrement ──────────────────────────────────────────────────── */
 
 /*
- * message_crypto_decrypt()
+ * message_crypto_decrypt_field()
  *
- * Entrées : cipher_b64  ← encrypted_content lu en base
- *           iv_b64      ← content_iv         lu en base
- * Sortie  : plaintext_out → texte affiché dans draw_chat_messages()
- * Retour  : longueur plaintext, -1 si erreur
+ * Déchiffre à la réception d'un SERVER_PUSH pour affichage dans le chat.
+ *
+ * Entrées :
+ *   cipher_b64  ← fields[3] du SERVER_PUSH (encrypted_content)
+ *   iv_b64      ← fields[4] du SERVER_PUSH (content_iv)
+ * Sortie :
+ *   plaintext_out → texte affiché dans draw_chat_messages()
+ *
+ * Retour : 0 OK, -1 erreur
  */
-int message_crypto_decrypt(const char *cipher_b64,
-                            const char *iv_b64,
-                            char       *plaintext_out,
-                            int         out_size)
+int message_crypto_decrypt_field(const char *cipher_b64,
+                                  const char *iv_b64,
+                                  char       *plaintext_out,
+                                  int         out_size)
 {
-    unsigned char cipher[4096];
+    unsigned char cipher[PACKET_FIELD_SIZE + 32];
     unsigned char iv[16];
-    unsigned char plain[4096];
+    unsigned char plain[PACKET_FIELD_SIZE];
     int len = 0, pt_len = 0;
 
     int ct_len = b64_decode(cipher_b64, cipher);
@@ -145,68 +159,9 @@ int message_crypto_decrypt(const char *cipher_b64,
     if (pt_len >= out_size) return -1;
     memcpy(plaintext_out, plain, pt_len);
     plaintext_out[pt_len] = '\0';
-    return pt_len;
+    return 0;
 
 err:
     EVP_CIPHER_CTX_free(ctx);
     return -1;
-}
-
-/* ── INSERT chiffré en base ─────────────────────────────────────────── */
-
-/*
- * message_crypto_encrypt_and_insert()
- *
- * Remplace l'INSERT direct dans message.c.
- * Appeler ainsi depuis message_model_send() :
- *
- *   // Avant (non chiffré) :
- *   // PQexecParams(conn, "INSERT INTO message ...", ...)
- *
- *   // Après (chiffré) :
- *   message_crypto_encrypt_and_insert(conn,
- *                                     layout->input_buffer,
- *                                     current_user.id,
- *                                     active_channel->id);
- *
- * Retour : 0 OK | -1 erreur crypto | -2 erreur DB
- */
-int message_crypto_encrypt_and_insert(PGconn     *conn,
-                                       const char *plaintext,
-                                       int         id_author,
-                                       int         id_channel)
-{
-    char iv_b64[64];
-    char cipher_b64[6000];
-
-    /* 1. Chiffrement du texte venant de input_buffer */
-    if (message_crypto_encrypt(plaintext, iv_b64, cipher_b64) < 0) {
-        fprintf(stderr, "[crypto] encrypt failed — message non envoyé\n");
-        return -1;
-    }
-
-    /* 2. Paramètres SQL */
-    char author_s[16], channel_s[16];
-    snprintf(author_s,  sizeof(author_s),  "%d", id_author);
-    snprintf(channel_s, sizeof(channel_s), "%d", id_channel);
-
-    const char *params[4] = { cipher_b64, iv_b64, author_s, channel_s };
-
-    /* 3. INSERT → table message */
-    PGresult *res = PQexecParams(
-        conn,
-        "INSERT INTO message "
-        "(encrypted_content, content_iv, id_author, id_channel) "
-        "VALUES ($1, $2, $3, $4)",
-        4, NULL, params, NULL, NULL, 0
-    );
-
-    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
-        fprintf(stderr, "[db] INSERT failed: %s\n", PQerrorMessage(conn));
-        PQclear(res);
-        return -2;
-    }
-
-    PQclear(res);
-    return 0;
 }
