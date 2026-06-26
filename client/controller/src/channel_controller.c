@@ -1,6 +1,5 @@
 #include "../include/channel_controller.h"
-#include "../include/ui_chat_store.h"       // Will become channel_model.h later
-#include "../include/ui_chat_components.h"  // For global modal rectangles
+
 
 void channel_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
 {
@@ -31,15 +30,15 @@ void channel_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
         return; // Event consumed by the modal
     }
 
-    // 2. Click on the '+' button to open the channel creation modal
-    if (cx >= btn_add_channel.x && cx <= btn_add_channel.x + btn_add_channel.w &&
-        cy >= btn_add_channel.y && cy <= btn_add_channel.y + btn_add_channel.h)
+   // Click on the '+' button to open the channel creation modal
+    if (cx >= layout->btn_add_channel.x && cx <= layout->btn_add_channel.x + layout->btn_add_channel.w &&
+        cy >= layout->btn_add_channel.y && cy <= layout->btn_add_channel.y + layout->btn_add_channel.h)
     {
         layout->show_create_modal = 1;
         layout->modal_is_private = 0;
         layout->modal_focused_field = 1;
         layout->modal_name_buffer[0] = '\0';
-        return;
+        return 0; // On renvoie 0 pour indiquer que le clic a été traité sans changement de vue
     }
 
     // 3. Click on a channel inside the sidebar
