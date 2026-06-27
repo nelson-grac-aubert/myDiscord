@@ -1,15 +1,17 @@
 #include "ui_welcome.h"
 #include "variables.h"
-#include "data/include/db_init.h"   /* chemin relatif explicite */
+#include "client_socket.h"
+#include "data/include/db_init.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 #include <libpq-fe.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-/* ── Variables globales accessibles depuis chat_controller.c ─────────── */
-PGconn *g_db_conn         = NULL;
-int     g_current_user_id = 1;
+/* ── Variables globales ─────────────────────────────────────────────── */
+PGconn       *g_db_conn         = NULL;
+int           g_current_user_id = 1;
+ClientSocket  g_client_socket;        /* ← utilisé par chat_controller  */
 
 int main(int argc, char **argv)
 {
@@ -43,7 +45,15 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    /* ── 3. Initialisation SDL2 ──────────────────────────────────────── */
+    /* ── 3. Connexion socket au serveur ──────────────────────────────── */
+    if (client_socket_connect(&g_client_socket, "127.0.0.1", 8080, NULL) != 0) {
+        fprintf(stderr, "[ERREUR] Connexion serveur echouee\n");
+        PQfinish(g_db_conn);
+        return EXIT_FAILURE;
+    }
+    client_socket_start_listener(&g_client_socket);
+
+    /* ── 4. Initialisation SDL2 ──────────────────────────────────────── */
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
         fprintf(stderr, "[ERREUR] SDL_Init : %s\n", SDL_GetError());
         PQfinish(g_db_conn);
@@ -57,18 +67,20 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    /* ── 4. Micro ────────────────────────────────────────────────────── */
+    /* ── 5. Micro ────────────────────────────────────────────────────── */
     init_hardware_microphone();
 
-    /* ── 5. Boucle principale ────────────────────────────────────────── */
+    /* ── 6. Boucle principale ────────────────────────────────────────── */
     int status = welcome_ui_init_and_run();
 
-    /* ── 6. Nettoyage ────────────────────────────────────────────────── */
+    /* ── 7. Nettoyage ────────────────────────────────────────────────── */
     if (mic_device > 0)
         SDL_CloseAudioDevice(mic_device);
 
     TTF_Quit();
     SDL_Quit();
+
+    client_socket_disconnect(&g_client_socket);
 
     PQfinish(g_db_conn);
     g_db_conn = NULL;
