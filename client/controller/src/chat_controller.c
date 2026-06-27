@@ -3,8 +3,9 @@
 #include "message.h"
 #include "ui_call.h"
 #include "ui_channels.h"
-#include "message_crypto.h"          /* chiffrement AES-256-CBC        */
-#include "../network/include/packet.h"
+#include "message_crypto.h"
+#include "client_socket.h"
+#include "packet.h"
 #include <string.h>
 #include <stdio.h>
 
