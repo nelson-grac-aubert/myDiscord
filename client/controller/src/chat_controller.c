@@ -23,14 +23,7 @@ extern ClientSocket g_client_socket;
 
 static char *open_file_explorer(void);
 
-/* ═══════════════════════════════════════════════════════════════════════
- * Fonction centrale d'envoi
- * 1. Chiffre input_buffer  → cipher_b64 + iv_b64
- * 2. packet_build(MSG_SEND, channel_id, cipher_b64, iv_b64)
- * 3. client_socket_send()
- * 4. message_model_add() pour l'affichage local immédiat (plaintext)
- * 5. Vide input_buffer
- * ═══════════════════════════════════════════════════════════════════════ */
+
 static void send_encrypted_message(ChatLayout *layout, Channel *active)
 {
     if (!active || strlen(layout->input_buffer) == 0)

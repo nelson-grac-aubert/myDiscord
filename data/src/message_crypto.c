@@ -1,19 +1,4 @@
-/*
- * data/message_crypto.c
- *
- * Chiffre le contenu d'un message AVANT packet_build().
- * Le serveur reçoit et stocke directement le ciphertext en base.
- *
- * Flux :
- *   chat_controller
- *     → message_crypto_encrypt_field(plaintext, cipher_b64, iv_b64)
- *     → packet_build(MSG_SEND, channel_id, cipher_b64)   ← chiffré
- *     → client_socket_send()
- *     → serveur → INSERT message(encrypted_content=cipher_b64, content_iv=iv_b64)
- *
- * Compilation : ajouter au Makefile
- *   LDFLAGS += -lssl -lcrypto
- */
+
 
 #include "message_crypto.h"
 #include <stdio.h>
@@ -35,7 +20,7 @@ static const unsigned char AES_KEY[32] = {
     0x10,0xfe,0xdc,0xba, 0x98,0x76,0x54,0x32
 };
 
-/* ── base64 ─────────────────────────────────────────────────────────── */
+ 
 
 static void b64_encode(const unsigned char *in, int len, char *out)
 {
@@ -64,21 +49,7 @@ static int b64_decode(const char *in, unsigned char *out)
     return len;
 }
 
-/* ── chiffrement ────────────────────────────────────────────────────── */
 
-/*
- * message_crypto_encrypt_field()
- *
- * Chiffre `plaintext` (input_buffer de l'utilisateur).
- *
- * Sorties :
- *   cipher_b64  → va dans fields[1] du paquet MSG_SEND
- *                 → stocké dans encrypted_content en base
- *   iv_b64      → à envoyer en fields[2] du paquet MSG_SEND
- *                 → stocké dans content_iv en base
- *
- * Retour : 0 OK, -1 erreur
- */
 int message_crypto_encrypt_field(const char *plaintext,
                                   char       *cipher_b64,  /* out ≥ 512  */
                                   char       *iv_b64)      /* out ≥ 32   */
@@ -113,21 +84,6 @@ err:
     return -1;
 }
 
-/* ── déchiffrement ──────────────────────────────────────────────────── */
-
-/*
- * message_crypto_decrypt_field()
- *
- * Déchiffre à la réception d'un SERVER_PUSH pour affichage dans le chat.
- *
- * Entrées :
- *   cipher_b64  ← fields[3] du SERVER_PUSH (encrypted_content)
- *   iv_b64      ← fields[4] du SERVER_PUSH (content_iv)
- * Sortie :
- *   plaintext_out → texte affiché dans draw_chat_messages()
- *
- * Retour : 0 OK, -1 erreur
- */
 int message_crypto_decrypt_field(const char *cipher_b64,
                                   const char *iv_b64,
                                   char       *plaintext_out,
