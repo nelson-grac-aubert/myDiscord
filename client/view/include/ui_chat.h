@@ -72,6 +72,7 @@ typedef struct
     SDL_Rect member_row_rect[MAX_MEMBER_ROWS];
     int member_row_user_id[MAX_MEMBER_ROWS];
     int member_row_is_banned[MAX_MEMBER_ROWS];
+    int member_row_role_id[MAX_MEMBER_ROWS];
     int member_row_count;
 
     // Right-click context menu on a chat message (add/remove reaction)

@@ -144,11 +144,13 @@ static void on_server_push(const Packet *pkt)
         return;
     }
 
-    /* Live account roster push: "USERS:id1:username1:online1:banned1;..." -
-       a full snapshot of every registered account (online or not, banned
+    /* Live account roster push: "USERS:id1:username1:online1:banned1:role1;..."
+       - a full snapshot of every registered account (online or not, banned
        or not), so it always replaces whatever roster we had rather than
        appending to it. The real user_id is carried so a moderator/admin
-       can target a ban/unban, including someone who's currently offline. */
+       can target a ban/unban, including someone who's currently offline;
+       the role lets the UI show "(mod)"/"(admin)" and decide locally
+       whether it's even allowed to offer a ban/unban menu for that target. */
     if (strncmp(payload, "USERS:", 6) == 0) {
         const char *data = payload + 6;
         char buf[PACKET_FIELD_SIZE];
@@ -162,16 +164,19 @@ static void on_server_push(const Packet *pkt)
             char *c1 = strchr(tok, ':');
             char *c2 = c1 ? strchr(c1 + 1, ':') : NULL;
             char *c3 = c2 ? strchr(c2 + 1, ':') : NULL;
-            if (c1 && c2 && c3) {
+            char *c4 = c3 ? strchr(c3 + 1, ':') : NULL;
+            if (c1 && c2 && c3 && c4) {
                 *c1 = '\0';
                 *c2 = '\0';
                 *c3 = '\0';
+                *c4 = '\0';
                 int uid = atoi(tok);
                 const char *uname = c1 + 1;
                 int is_online = atoi(c2 + 1);
                 int is_banned = atoi(c3 + 1);
+                int role_id = atoi(c4 + 1);
                 if (uid > 0 && strlen(uname) > 0)
-                    user_model_add(uid, uname, is_online, is_banned);
+                    user_model_add(uid, uname, is_online, is_banned, role_id);
             }
             tok = strtok(NULL, ";");
         }
@@ -605,23 +610,35 @@ void chat_controller_handle_mousewheel(ChatLayout *layout, int wheel_y)
         layout->chat_scroll_offset = 0;
 }
 
+/* Mirrors can_moderate_target() server-side: moderator -> may target a
+   user; admin -> may target a user or a moderator (but not another admin).
+   Used so the ban/unban menu isn't even offered for a target the server
+   would reject anyway. */
+static int can_moderate_target(int my_role, int target_role)
+{
+    return (my_role == ROLE_MODERATOR && target_role == ROLE_USER) ||
+          (my_role == ROLE_ADMIN && (target_role == ROLE_USER || target_role == ROLE_MODERATOR));
+}
+
 void chat_controller_handle_right_click(ChatLayout *layout, int cx, int cy)
 {
     layout->show_user_context_menu = 0;
     layout->show_reaction_menu = 0;
 
-    /* Ban menu: only moderators/admins have any ban permission at all -
-       don't even offer the menu to a plain user (the server would reject
-       it anyway). member_row_rect/member_row_user_id/member_row_is_banned
-       are populated fresh every frame by users_draw_sidebar (both the
-       online and offline sections), so this hit-test always matches
-       exactly what's on screen. */
+    /* Ban menu: only moderators/admins have any ban permission at all, and
+       only against a target role they're actually allowed to act on -
+       don't even offer the menu otherwise (the server would reject it
+       anyway). member_row_rect/member_row_user_id/member_row_is_banned/
+       member_row_role_id are populated fresh every frame by
+       users_draw_sidebar (both the online and offline sections), so this
+       hit-test always matches exactly what's on screen. */
     int my_role = auth_controller_get_role_id();
     if (my_role == ROLE_MODERATOR || my_role == ROLE_ADMIN) {
         for (int i = 0; i < layout->member_row_count; i++) {
             SDL_Rect *r = &layout->member_row_rect[i];
             if (cx >= r->x && cx <= r->x + r->w && cy >= r->y && cy <= r->y + r->h) {
-                if (layout->member_row_user_id[i] != auth_controller_get_user_id()) {
+                if (layout->member_row_user_id[i] != auth_controller_get_user_id() &&
+                    can_moderate_target(my_role, layout->member_row_role_id[i])) {
                     layout->show_user_context_menu = 1;
                     layout->context_menu_target_user_id = layout->member_row_user_id[i];
                     layout->context_menu_is_unban = layout->member_row_is_banned[i];

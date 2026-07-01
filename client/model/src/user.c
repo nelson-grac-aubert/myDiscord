@@ -34,7 +34,7 @@ int user_model_get_offline(User* out_users, int max_out) {
     return count;
 }
 
-void user_model_add(int id, const char* username, int is_online, int is_banned) {
+void user_model_add(int id, const char* username, int is_online, int is_banned, int role_id) {
     if (local_user_count >= MAX_USERS) return;
 
     User *u = &local_users[local_user_count];
@@ -43,6 +43,7 @@ void user_model_add(int id, const char* username, int is_online, int is_banned) 
     u->username[31] = '\0';
     u->is_online = is_online;
     u->is_banned = is_banned;
+    u->role_id = role_id;
 
     local_user_count++;
 }

@@ -3,11 +3,17 @@
 
 #define MAX_USERS 64
 
+/* Matches the seeded rows in the `role` table (data/myDiscord.sql) */
+#define ROLE_ADMIN     1
+#define ROLE_USER      2
+#define ROLE_MODERATOR 3
+
 typedef struct {
     int id;
     char username[32];
     int is_online;
     int is_banned;
+    int role_id;
 } User;
 
 // Initializes the connected users list
@@ -20,7 +26,7 @@ int user_model_get_online(User* out_users, int max_out);
 int user_model_get_offline(User* out_users, int max_out);
 
 // User list management
-void user_model_add(int id, const char* username, int is_online, int is_banned);
+void user_model_add(int id, const char* username, int is_online, int is_banned, int role_id);
 void user_model_set_status(int id, int is_online);
 
 #endif /* USER_MODEL_H */

@@ -112,7 +112,8 @@ int db_user_list_all(PGconn *db, char out[][170], int max_rows)
     PGresult *res = PQexecParams(db,
         "SELECT u.id_user, u.first_name, "
         "       CASE WHEN EXISTS (SELECT 1 FROM blacklist b WHERE b.id_user = u.id_user) "
-        "            THEN 1 ELSE 0 END AS is_banned "
+        "            THEN 1 ELSE 0 END AS is_banned, "
+        "       u.id_role "
         "FROM \"user\" u ORDER BY u.first_name",
         0, NULL, NULL, NULL, NULL, 0);
 
@@ -125,8 +126,9 @@ int db_user_list_all(PGconn *db, char out[][170], int max_rows)
     int count = PQntuples(res);
     if (count > max_rows) count = max_rows;
     for (int i = 0; i < count; i++)
-        snprintf(out[i], 170, "%s:%s:%s",
-                 PQgetvalue(res, i, 0), PQgetvalue(res, i, 1), PQgetvalue(res, i, 2));
+        snprintf(out[i], 170, "%s:%s:%s:%s",
+                 PQgetvalue(res, i, 0), PQgetvalue(res, i, 1),
+                 PQgetvalue(res, i, 2), PQgetvalue(res, i, 3));
 
     PQclear(res);
     return count;
