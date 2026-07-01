@@ -24,6 +24,10 @@ static char *open_file_explorer(void);
 
 static void on_server_push(const Packet *pkt)
 {
+    /* Ignore server acknowledgments, only handle real pushes */
+    if (pkt->type == SERVER_OK || pkt->type == SERVER_ERROR)
+        return;
+
     if (pkt->field_count < 1)
         return;
 
@@ -89,8 +93,6 @@ static void send_message(ChatLayout *layout, Channel *active)
         return;
     }
 
-    /* Show locally immediately, server will broadcast to others */
-    message_model_add(0, active->id, "Me", layout->input_buffer);
     layout->input_buffer[0] = '\0';
 }
 
