@@ -14,9 +14,7 @@ void users_draw_sidebar(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *fo
 
         int user_y = 55;
         for (int i = 0; i < count; i++) {
-            char name_str[64];
-            snprintf(name_str, sizeof(name_str), "●  %s", online_users[i].username);
-            draw_text(renderer, font_main, name_str, layout->sidebar_members.x + 20, user_y, green_online);
+            draw_text(renderer, font_main, online_users[i].username, layout->sidebar_members.x + 20, user_y, green_online);
             user_y += 30;
         }
     }
