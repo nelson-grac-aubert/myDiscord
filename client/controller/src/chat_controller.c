@@ -1,13 +1,14 @@
 #include "chat_controller.h"
+#include "auth_controller.h"
 #include "channel.h"
 #include "message.h"
 #include "ui_call.h"
 #include "ui_channels.h"
-#include "message_crypto.h"
 #include "client_socket.h"
 #include "packet.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -19,55 +20,72 @@ static SDL_Renderer *current_renderer = NULL;
 extern SDL_Rect modal_bg_rect, modal_input_rect, modal_toggle_rect,
                modal_btn_ok, modal_btn_cancel;
 
-/* ClientSocket global — initialisé dans main.c côté client SDL */
-extern ClientSocket g_client_socket;
-
 static char *open_file_explorer(void);
 
+/* Called from the listener thread when a SERVER_PUSH arrives */
+static void on_server_push(const Packet *pkt)
+{
+    if (pkt->type != SERVER_PUSH || pkt->field_count < 1)
+        return;
 
-static void send_encrypted_message(ChatLayout *layout, Channel *active)
+    /* SERVER_PUSH format: "username|content" */
+    char raw[PACKET_FIELD_SIZE];
+    strncpy(raw, pkt->fields[0], sizeof(raw) - 1);
+    raw[sizeof(raw) - 1] = '\0';
+
+    char *sep = strchr(raw, '|');
+    if (sep) {
+        *sep = '\0';
+        char *username = raw;
+        char *content  = sep + 1;
+        Channel *active = channel_model_get_active();
+        if (active)
+            message_model_add(0, active->id, username, content);
+    } else {
+        Channel *active = channel_model_get_active();
+        if (active)
+            message_model_add(0, active->id, "unknown", raw);
+    }
+}
+
+static void send_message(ChatLayout *layout, Channel *active)
 {
     if (!active || strlen(layout->input_buffer) == 0)
         return;
 
-    char cipher_b64[512];
-    char iv_b64[32];
-
-    /* 1. Chiffrement */
-    if (message_crypto_encrypt_field(layout->input_buffer,
-                                     cipher_b64, iv_b64) != 0)
-    {
-        fprintf(stderr, "[send] chiffrement echoue\n");
-        return;
-    }
-
-    /* 2. Paquet MSG_SEND : fields = { channel_id, cipher_b64, iv_b64 } */
     char channel_id_str[16];
     snprintf(channel_id_str, sizeof(channel_id_str), "%d", active->id);
 
     Packet pkt;
-    if (packet_build(&pkt, MSG_SEND, 3,
-                     channel_id_str, cipher_b64, iv_b64) != 0)
-    {
-        fprintf(stderr, "[send] packet_build echoue\n");
+    if (packet_build(&pkt, MSG_SEND, 2, channel_id_str, layout->input_buffer) != 0)
+        return;
+
+    if (client_socket_send(&g_client_socket, &pkt) != 0) {
+        fprintf(stderr, "[chat] send failed\n");
         return;
     }
 
-    /* 3. Envoi au serveur → serveur stocke cipher_b64/iv_b64 en base */
-    if (client_socket_send(&g_client_socket, &pkt) != 0)
-    {
-        fprintf(stderr, "[send] client_socket_send echoue\n");
-        return;
-    }
-
-    /* 4. Affichage local en clair (modèle mémoire uniquement) */
+    /* Show locally immediately */
     message_model_add(0, active->id, "Me", layout->input_buffer);
-
-    /* 5. Vider la barre */
     layout->input_buffer[0] = '\0';
 }
 
-/* ══════════════════════════════════════════════════════════════════════ */
+static void request_channel_join(int channel_id)
+{
+    char id_str[16];
+    snprintf(id_str, sizeof(id_str), "%d", channel_id);
+
+    Packet pkt;
+    packet_build(&pkt, CHANNEL_JOIN, 1, id_str);
+    client_socket_send(&g_client_socket, &pkt);
+}
+
+static void request_channel_list(void)
+{
+    Packet pkt;
+    packet_build(&pkt, CHANNEL_LIST, 0);
+    client_socket_send(&g_client_socket, &pkt);
+}
 
 void chat_controller_init(ChatLayout *layout, SDL_Renderer *renderer)
 {
@@ -84,6 +102,15 @@ void chat_controller_init(ChatLayout *layout, SDL_Renderer *renderer)
     layout->hover_message_delete_index = -1;
     layout->show_context_menu = 0;
     g_is_mic_muted = 0;
+
+    /* Register our push handler and request initial data */
+    auth_controller_set_chat_callback(on_server_push);
+    request_channel_list();
+
+    /* Auto-join first channel if any */
+    Channel *first = channel_model_get_by_index(0);
+    if (first)
+        request_channel_join(first->id);
 }
 
 void chat_controller_destroy(ChatLayout *layout) { (void)layout; }
@@ -92,9 +119,8 @@ void chat_controller_update_hover(ChatLayout *layout, int mx, int my)
 
 int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
 {
-    // 1. MODALE DE CRÉATION DE SALON
-    if (layout->show_create_modal)
-    {
+    /* 1. Modal de création de salon */
+    if (layout->show_create_modal) {
         if (cx >= modal_input_rect.x && cx <= modal_input_rect.x + modal_input_rect.w &&
             cy >= modal_input_rect.y && cy <= modal_input_rect.y + modal_input_rect.h)
         { layout->modal_focused_field = 1; return 0; }
@@ -110,10 +136,16 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
         { layout->show_create_modal = 0; layout->modal_buffer[0] = '\0'; return 0; }
 
         if (cx >= modal_btn_ok.x && cx <= modal_btn_ok.x + modal_btn_ok.w &&
-            cy >= modal_btn_ok.y && cy <= modal_btn_ok.y + modal_btn_ok.h)
-        {
-            if (strlen(layout->modal_buffer) > 0)
-            {
+            cy >= modal_btn_ok.y && cy <= modal_btn_ok.y + modal_btn_ok.h) {
+            if (strlen(layout->modal_buffer) > 0) {
+                /* Send to server */
+                char priv_str[2];
+                snprintf(priv_str, sizeof(priv_str), "%d", layout->modal_is_private);
+                Packet pkt;
+                packet_build(&pkt, CHANNEL_CREATE, 2, layout->modal_buffer, priv_str);
+                client_socket_send(&g_client_socket, &pkt);
+
+                /* Add locally */
                 int next_id = channel_model_get_count() + 1;
                 channel_model_add(next_id, layout->modal_buffer, layout->modal_is_private);
                 layout->show_create_modal = 0;
@@ -124,15 +156,14 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
         return 0;
     }
 
-    // 2. BOUTON LOGOUT
+    /* 2. Bouton logout */
     if (cx >= layout->btn_logout.x && cx <= layout->btn_logout.x + layout->btn_logout.w &&
         cy >= layout->btn_logout.y && cy <= layout->btn_logout.y + layout->btn_logout.h)
         return 2;
 
-    // 3. BOUTON AJOUT SALON
+    /* 3. Bouton ajout salon */
     if (cx >= layout->btn_add_channel.x && cx <= layout->btn_add_channel.x + layout->btn_add_channel.w &&
-        cy >= layout->btn_add_channel.y && cy <= layout->btn_add_channel.y + layout->btn_add_channel.h)
-    {
+        cy >= layout->btn_add_channel.y && cy <= layout->btn_add_channel.y + layout->btn_add_channel.h) {
         layout->show_create_modal = 1;
         layout->modal_focused_field = 1;
         layout->modal_buffer[0] = '\0';
@@ -140,72 +171,69 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
         return 0;
     }
 
-    // 4. BOUTON APPEL
+    /* 4. Bouton appel */
     if (cx >= layout->btn_call.x && cx <= layout->btn_call.x + layout->btn_call.w &&
-        cy >= layout->btn_call.y && cy <= layout->btn_call.y + layout->btn_call.h)
-    {
+        cy >= layout->btn_call.y && cy <= layout->btn_call.y + layout->btn_call.h) {
         ouvrir_fenetre_appel(current_renderer, font_title, font_main, font_sub, font_emoji,
                              layout->window_w, layout->window_h);
         return 1;
     }
 
-    // 5. BOUTON TRANSFERT DE FICHIER
+    /* 5. Bouton transfert de fichier */
     if (cx >= layout->btn_file_transfer.x && cx <= layout->btn_file_transfer.x + layout->btn_file_transfer.w &&
-        cy >= layout->btn_file_transfer.y && cy <= layout->btn_file_transfer.y + layout->btn_file_transfer.h)
-    {
+        cy >= layout->btn_file_transfer.y && cy <= layout->btn_file_transfer.y + layout->btn_file_transfer.h) {
         char *file_path = open_file_explorer();
-        if (file_path && strlen(file_path) > 0)
-        {
+        if (file_path && strlen(file_path) > 0) {
             Channel *active = channel_model_get_active();
             if (active) message_model_add(0, active->id, "Me", file_path);
         }
         return 1;
     }
 
-    // 6. BOUTON ENVOYER ➡️  →  chiffrement + socket
+    /* 6. Bouton envoyer */
     int send_x = layout->chat_input_bar.x + layout->chat_input_bar.w - 45;
     int send_y = layout->window_h - 56;
-    if (cx >= send_x && cx <= send_x + 36 && cy >= send_y && cy <= send_y + 36)
-    {
+    if (cx >= send_x && cx <= send_x + 36 && cy >= send_y && cy <= send_y + 36) {
         Channel *active = channel_model_get_active();
-        send_encrypted_message(layout, active);  /* ← chiffré ici */
+        send_message(layout, active);
         return 0;
     }
 
-    // 7. SUPPRESSION DE SALON
+    /* 7. Suppression de salon */
     if (layout->hover_channel_delete_index != -1 &&
         cx >= layout->btn_delete_channel_rect.x &&
         cx <= layout->btn_delete_channel_rect.x + layout->btn_delete_channel_rect.w &&
         cy >= layout->btn_delete_channel_rect.y &&
-        cy <= layout->btn_delete_channel_rect.y + layout->btn_delete_channel_rect.h)
-    {
+        cy <= layout->btn_delete_channel_rect.y + layout->btn_delete_channel_rect.h) {
         channel_model_delete_by_index(layout->hover_channel_delete_index);
         layout->hover_channel_delete_index = -1;
         return 0;
     }
 
-    // 8. SÉLECTION D'UN SALON
+    /* 8. Sélection d'un salon */
     if (cx >= layout->sidebar_channels.x &&
-        cx <= layout->sidebar_channels.x + layout->sidebar_channels.w)
-    {
+        cx <= layout->sidebar_channels.x + layout->sidebar_channels.w) {
         int channel_y = 60;
-        for (int i = 0; i < channel_model_get_count(); i++)
-        {
+        for (int i = 0; i < channel_model_get_count(); i++) {
             SDL_Rect r = {layout->sidebar_channels.x + 8, channel_y - 4,
                           layout->sidebar_channels.w - 16, 28};
-            if (cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h)
-            { channel_model_set_active_index(i); return 0; }
+            if (cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h) {
+                channel_model_set_active_index(i);
+                Channel *ch = channel_model_get_by_index(i);
+                if (ch)
+                    request_channel_join(ch->id);
+                return 0;
+            }
             channel_y += 32;
         }
     }
 
-    // 9. SUPPRESSION DE MESSAGE
+    /* 9. Suppression de message */
     if (layout->hover_message_delete_index != -1 &&
         cx >= layout->btn_delete_message_rect.x &&
         cx <= layout->btn_delete_message_rect.x + layout->btn_delete_message_rect.w &&
         cy >= layout->btn_delete_message_rect.y &&
-        cy <= layout->btn_delete_message_rect.y + layout->btn_delete_message_rect.h)
-    {
+        cy <= layout->btn_delete_message_rect.y + layout->btn_delete_message_rect.h) {
         Channel *active = channel_model_get_active();
         if (active)
             message_model_delete_by_index_in_channel(active->id,
@@ -214,7 +242,7 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
         return 0;
     }
 
-    // 10. FOCUS INPUT
+    /* 10. Focus input */
     layout->is_input_focused =
         (cx >= layout->chat_input_bar.x &&
          cx <= layout->chat_input_bar.x + layout->chat_input_bar.w &&
@@ -225,17 +253,18 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
 
 void chat_controller_handle_keydown(ChatLayout *layout, SDL_Keycode sym)
 {
-    if (layout->show_create_modal && layout->modal_focused_field)
-    {
-        if (sym == SDLK_BACKSPACE)
-        {
+    if (layout->show_create_modal && layout->modal_focused_field) {
+        if (sym == SDLK_BACKSPACE) {
             size_t len = strlen(layout->modal_buffer);
             if (len > 0) layout->modal_buffer[len - 1] = '\0';
-        }
-        else if (sym == SDLK_RETURN || sym == SDLK_KP_ENTER)
-        {
-            if (strlen(layout->modal_buffer) > 0)
-            {
+        } else if (sym == SDLK_RETURN || sym == SDLK_KP_ENTER) {
+            if (strlen(layout->modal_buffer) > 0) {
+                char priv_str[2];
+                snprintf(priv_str, sizeof(priv_str), "%d", layout->modal_is_private);
+                Packet pkt;
+                packet_build(&pkt, CHANNEL_CREATE, 2, layout->modal_buffer, priv_str);
+                client_socket_send(&g_client_socket, &pkt);
+
                 channel_model_add(channel_model_get_count() + 1,
                                   layout->modal_buffer, layout->modal_is_private);
                 layout->show_create_modal = 0;
@@ -245,32 +274,27 @@ void chat_controller_handle_keydown(ChatLayout *layout, SDL_Keycode sym)
         return;
     }
 
-    if (sym == SDLK_BACKSPACE && layout->is_input_focused)
-    {
+    if (sym == SDLK_BACKSPACE && layout->is_input_focused) {
         size_t len = strlen(layout->input_buffer);
         if (len > 0) layout->input_buffer[len - 1] = '\0';
         return;
     }
 
-    /* ENTRÉE → chiffrement + socket */
     if ((sym == SDLK_RETURN || sym == SDLK_KP_ENTER) &&
-        layout->is_input_focused && strlen(layout->input_buffer) > 0)
-    {
+        layout->is_input_focused && strlen(layout->input_buffer) > 0) {
         Channel *active = channel_model_get_active();
-        send_encrypted_message(layout, active);  /* ← chiffré ici */
+        send_message(layout, active);
     }
 }
 
 void chat_controller_handle_textinput(ChatLayout *layout, const char *text)
 {
-    if (layout->show_create_modal && layout->modal_focused_field)
-    {
+    if (layout->show_create_modal && layout->modal_focused_field) {
         if (strlen(layout->modal_buffer) + strlen(text) < sizeof(layout->modal_buffer) - 1)
             strcat(layout->modal_buffer, text);
         return;
     }
-    if (layout->is_input_focused)
-    {
+    if (layout->is_input_focused) {
         if (strlen(layout->input_buffer) + strlen(text) < MAX_MSG_LENGTH - 1)
             strcat(layout->input_buffer, text);
     }
@@ -278,12 +302,18 @@ void chat_controller_handle_textinput(ChatLayout *layout, const char *text)
 
 int chat_controller_is_mic_muted(void) { return g_is_mic_muted; }
 
+void chat_controller_handle_right_click(ChatLayout *layout, int cx, int cy)
+{ (void)layout; (void)cx; (void)cy; }
+
+void chat_controller_handle_menu_action(ChatLayout *layout, int cx, int cy)
+{ (void)layout; (void)cx; (void)cy; }
+
 static char *open_file_explorer(void)
 {
 #ifdef _WIN32
     OPENFILENAMEW ofn;
     static wchar_t szFileW[260];
-    static char    szFileUTF8[512];
+    static char szFileUTF8[512];
     memset(szFileW, 0, sizeof(szFileW));
     memset(szFileUTF8, 0, sizeof(szFileUTF8));
     ZeroMemory(&ofn, sizeof(ofn));
@@ -293,8 +323,7 @@ static char *open_file_explorer(void)
     ofn.lpstrFilter  = L"Images\0*.png;*.jpg;*.jpeg\0All\0*.*\0";
     ofn.nFilterIndex = 1;
     ofn.Flags        = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
-    if (GetOpenFileNameW(&ofn) == TRUE)
-    {
+    if (GetOpenFileNameW(&ofn) == TRUE) {
         WideCharToMultiByte(CP_UTF8, 0, szFileW, -1, szFileUTF8, sizeof(szFileUTF8), NULL, NULL);
         return szFileUTF8;
     }
@@ -303,9 +332,3 @@ static char *open_file_explorer(void)
     return NULL;
 #endif
 }
-
-void chat_controller_handle_right_click(ChatLayout *layout, int cx, int cy)
-{ (void)layout; (void)cx; (void)cy; }
-
-void chat_controller_handle_menu_action(ChatLayout *layout, int cx, int cy)
-{ (void)layout; (void)cx; (void)cy; }

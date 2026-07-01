@@ -11,12 +11,20 @@ static AuthResult g_result  = AUTH_RESULT_PENDING;
 static char g_error[512]    = {0};
 static int g_user_id        = -1;
 
+/* Secondary callback registered by chat_controller for SERVER_PUSH etc. */
+static PacketCallback g_chat_callback = NULL;
+
+void auth_controller_set_chat_callback(PacketCallback cb)
+{
+    g_chat_callback = cb;
+}
+
 static void on_packet_received(const Packet *pkt)
 {
     if (pkt->type == SERVER_OK) {
         g_user_id = pkt->field_count > 0 ? atoi(pkt->fields[0]) : -1;
         g_result  = AUTH_RESULT_OK;
-        printf("[auth] login/register ok, user_id=%d\n", g_user_id);
+        printf("[auth] ok, user_id=%d\n", g_user_id);
     } else if (pkt->type == SERVER_ERROR) {
         strncpy(g_error,
                 pkt->field_count > 0 ? pkt->fields[0] : "unknown error",
@@ -24,6 +32,9 @@ static void on_packet_received(const Packet *pkt)
         g_error[sizeof(g_error) - 1] = '\0';
         g_result = AUTH_RESULT_ERROR;
         printf("[auth] error: %s\n", g_error);
+    } else if (g_chat_callback) {
+        /* Forward all other packets (SERVER_PUSH etc.) to chat controller */
+        g_chat_callback(pkt);
     }
 }
 
@@ -61,19 +72,12 @@ void auth_controller_register(UIState *state)
     client_socket_send(&g_client_socket, &pkt);
 }
 
-AuthResult auth_controller_get_result(void)
-{
-    return g_result;
-}
+AuthResult auth_controller_get_result(void)    { return g_result; }
+int auth_controller_get_user_id(void)          { return g_user_id; }
 
 const char *auth_controller_get_error(void)
 {
     return g_error[0] != '\0' ? g_error : NULL;
-}
-
-int auth_controller_get_user_id(void)
-{
-    return g_user_id;
 }
 
 void auth_controller_disconnect(void)
