@@ -1,7 +1,11 @@
 #ifndef AUTH_CONTROLLER_H
 #define AUTH_CONTROLLER_H
 
+#include "client_socket.h"
 #include "ui_login.h"
+
+/* Shared socket used by all controllers */
+extern ClientSocket g_client_socket;
 
 typedef enum {
     AUTH_RESULT_PENDING,
@@ -12,8 +16,7 @@ typedef enum {
 /* Connect to the server. Must be called before login or register. */
 int auth_controller_connect(const char *ip, int port);
 
-/* Send AUTH_LOGIN to the server with the current UI state credentials.
-   Returns AUTH_RESULT_PENDING immediately, result arrives via callback. */
+/* Send AUTH_LOGIN to the server with the current UI state credentials. */
 void auth_controller_login(UIState *state);
 
 /* Send AUTH_REGISTER to the server with the current UI state credentials. */
