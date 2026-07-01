@@ -28,6 +28,9 @@ void chat_controller_handle_keydown(ChatLayout *layout, SDL_Keycode sym);
 // Handles character-by-character text input into active buffers
 void chat_controller_handle_textinput(ChatLayout *layout, const char *text);
 
+// Handles mouse wheel scrolling of the message list
+void chat_controller_handle_mousewheel(ChatLayout *layout, int wheel_y);
+
 // Getters for controller states (e.g., microphone)
 int chat_controller_is_mic_muted(void);
 

@@ -381,6 +381,7 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
                           layout->sidebar_channels.w - 16, 28};
             if (cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h) {
                 channel_model_set_active_index(i);
+                layout->chat_scroll_offset = 0;
                 Channel *ch = channel_model_get_by_index(i);
                 if (ch)
                     request_channel_join_and_history(ch->id);
@@ -477,6 +478,16 @@ void chat_controller_handle_textinput(ChatLayout *layout, const char *text)
 }
 
 int chat_controller_is_mic_muted(void) { return g_is_mic_muted; }
+
+void chat_controller_handle_mousewheel(ChatLayout *layout, int wheel_y)
+{
+    /* Actual clamping against how much content there is happens every
+       frame in draw_chat_messages, since it depends on the current
+       message list; this just nudges the offset. */
+    layout->chat_scroll_offset += wheel_y * 40;
+    if (layout->chat_scroll_offset < 0)
+        layout->chat_scroll_offset = 0;
+}
 
 void chat_controller_handle_right_click(ChatLayout *layout, int cx, int cy)
 { (void)layout; (void)cx; (void)cy; }

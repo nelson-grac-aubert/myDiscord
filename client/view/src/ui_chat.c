@@ -63,9 +63,43 @@ static void draw_chat_messages(SDL_Renderer *renderer, ChatLayout *layout, TTF_F
     if (!active_ch)
         return;
 
-    int start_y = CHAT_MESSAGES_START_Y;
     Message active_msgs[MAX_MESSAGES];
     int msg_count = message_model_get_for_channel(active_ch->id, active_msgs, MAX_MESSAGES);
+
+    /* Leave room on the right for the scrollbar so wrapped text never
+       overlaps it (or spills into the members panel) */
+    int text_wrap_width = layout->chat_area.w - 40;
+
+    static char full_msgs[MAX_MESSAGES][560];
+    int item_heights[MAX_MESSAGES];
+    int total_height = 0;
+    for (int i = 0; i < msg_count; i++) {
+        if (is_image_path(active_msgs[i].text)) {
+            item_heights[i] = 120;
+        } else {
+            snprintf(full_msgs[i], sizeof(full_msgs[i]), "%s  %s: %s",
+                     active_msgs[i].timestamp, active_msgs[i].username, active_msgs[i].text);
+            int h = measure_text_wrapped_height(font_main, full_msgs[i], text_wrap_width);
+            item_heights[i] = (h > MESSAGE_ITEM_HEIGHT ? h : MESSAGE_ITEM_HEIGHT) + 8;
+        }
+        total_height += item_heights[i];
+    }
+
+    /* Viewport = area between the channel top bar and the (dynamically
+       sized) input bar. Messages are laid out bottom-anchored so that a
+       scroll offset of 0 always shows the latest message, growing the
+       offset reveals older ones - like any normal chat scrollback. */
+    int viewport_top = CHAT_MESSAGES_START_Y;
+    int viewport_bottom = layout->chat_input_bar.y - 10;
+    int viewport_height = viewport_bottom - viewport_top;
+    if (viewport_height < 0) viewport_height = 0;
+
+    int max_scroll = total_height - viewport_height;
+    if (max_scroll < 0) max_scroll = 0;
+    if (layout->chat_scroll_offset > max_scroll) layout->chat_scroll_offset = max_scroll;
+    if (layout->chat_scroll_offset < 0) layout->chat_scroll_offset = 0;
+
+    int start_y = viewport_bottom - total_height + layout->chat_scroll_offset;
 
     int mx, my;
     SDL_GetMouseState(&mx, &my);
@@ -75,13 +109,27 @@ static void draw_chat_messages(SDL_Renderer *renderer, ChatLayout *layout, TTF_F
     // SÉCURITÉ : Activer le Blend Mode pour gérer la transparence des survols
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 
+    SDL_Rect clip = {layout->chat_area.x, viewport_top, layout->chat_area.w, viewport_height};
+    SDL_RenderSetClipRect(renderer, &clip);
+
     for (int i = 0; i < msg_count; i++)
     {
+        int current_item_height = item_heights[i];
+
+        /* Skip rows fully outside the visible viewport, but keep advancing
+           start_y so later rows still land at the right position */
+        if (start_y + current_item_height < viewport_top || start_y > viewport_bottom)
+        {
+            start_y += current_item_height;
+            continue;
+        }
+
         int is_img = is_image_path(active_msgs[i].text);
-        int current_item_height = is_img ? 120 : MESSAGE_ITEM_HEIGHT;
 
         SDL_Rect row_rect = {layout->chat_area.x + 10, start_y - 2, layout->chat_area.w - 20, current_item_height};
-        int is_hovered = (mx >= row_rect.x && mx <= row_rect.x + row_rect.w && my >= row_rect.y && my <= row_rect.y + row_rect.h);
+        int is_hovered = (mx >= row_rect.x && mx <= row_rect.x + row_rect.w &&
+                          my >= row_rect.y && my <= row_rect.y + row_rect.h &&
+                          my >= viewport_top && my <= viewport_bottom);
 
         if (is_hovered && !layout->show_create_modal)
         {
@@ -119,10 +167,8 @@ static void draw_chat_messages(SDL_Renderer *renderer, ChatLayout *layout, TTF_F
         }
         else
         {
-            char full_msg[560];
-            snprintf(full_msg, sizeof(full_msg), "%s  %s: %s",
-                     active_msgs[i].timestamp, active_msgs[i].username, active_msgs[i].text);
-            draw_text(renderer, font_main, full_msg, layout->chat_area.x + 20, start_y, white);
+            draw_text_wrapped(renderer, font_main, full_msgs[i],
+                              layout->chat_area.x + 20, start_y, white, text_wrap_width);
         }
 
         if (is_hovered && !layout->show_create_modal && font_emoji)
@@ -139,6 +185,31 @@ static void draw_chat_messages(SDL_Renderer *renderer, ChatLayout *layout, TTF_F
         }
 
         start_y += current_item_height;
+    }
+
+    SDL_RenderSetClipRect(renderer, NULL);
+
+    // Scrollbar : uniquement visible si le contenu dépasse la zone visible
+    if (max_scroll > 0)
+    {
+        int track_w = 6;
+        int track_x = layout->chat_area.x + layout->chat_area.w - track_w - 4;
+
+        int thumb_h = viewport_height * viewport_height / total_height;
+        if (thumb_h < 20) thumb_h = 20;
+        if (thumb_h > viewport_height) thumb_h = viewport_height;
+
+        float scroll_ratio = (float)layout->chat_scroll_offset / (float)max_scroll;
+        int thumb_y = viewport_top + viewport_height - thumb_h -
+                     (int)(scroll_ratio * (viewport_height - thumb_h));
+
+        SDL_Rect track_rect = {track_x, viewport_top, track_w, viewport_height};
+        SDL_SetRenderDrawColor(renderer, 0x1A, 0x1B, 0x1E, 255);
+        SDL_RenderFillRect(renderer, &track_rect);
+
+        SDL_Rect thumb_rect = {track_x, thumb_y, track_w, thumb_h};
+        SDL_SetRenderDrawColor(renderer, 0x5A, 0x5C, 0x62, 255);
+        SDL_RenderFillRect(renderer, &thumb_rect);
     }
 
     // SÉCURITÉ : Désactiver le blend mode et restaurer une couleur neutre (ex: Noir opaque)
@@ -235,6 +306,27 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
         }
     }
 
+    /* Grow the input bar upward to fit the message being typed, anchoring
+       its bottom edge in place so the send/call/file buttons (positioned
+       from window_h directly) don't move. Computed before draw_chat_messages
+       so the message viewport shrinks to make room for it. */
+    {
+        int wrap_width = layout->chat_input_bar.w - 30;
+        int text_h = measure_text_wrapped_height(font_main, layout->input_buffer, wrap_width);
+        int line_h = TTF_FontLineSkip(font_main);
+        int padding_v = 24;
+        int min_h = 44;
+        int max_h = padding_v + line_h * 6;
+
+        int new_h = (text_h > 0 ? text_h : line_h) + padding_v;
+        if (new_h < min_h) new_h = min_h;
+        if (new_h > max_h) new_h = max_h;
+
+        int anchor_bottom = layout->window_h - 16;
+        layout->chat_input_bar.h = new_h;
+        layout->chat_input_bar.y = anchor_bottom - new_h;
+    }
+
     draw_chat_messages(renderer, layout, font_main, font_emoji, color_white);
 
     SDL_SetRenderDrawColor(renderer, VAR_COLOR_BG_INPUT.r, VAR_COLOR_BG_INPUT.g, VAR_COLOR_BG_INPUT.b, VAR_COLOR_BG_INPUT.a);
@@ -249,6 +341,7 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
     }
 
     int text_width = 0;
+    int wrapped_h = 0;
     if (strlen(layout->input_buffer) == 0)
     {
         if (active_ch)
@@ -260,11 +353,16 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
     }
     else
     {
-        draw_text(renderer, font_main, layout->input_buffer, layout->chat_input_bar.x + 15, layout->chat_input_bar.y + 12, color_white);
+        wrapped_h = draw_text_wrapped(renderer, font_main, layout->input_buffer,
+                                      layout->chat_input_bar.x + 15, layout->chat_input_bar.y + 12,
+                                      color_white, layout->chat_input_bar.w - 30);
         TTF_SizeText(font_main, layout->input_buffer, &text_width, NULL);
     }
 
-    if (layout->is_input_focused && (SDL_GetTicks() / 500) % 2 == 0)
+    // Blinking caret only makes sense while the text still fits on one line;
+    // once it wraps, just leave the wrapped block visible without a caret.
+    int single_line_h = TTF_FontLineSkip(font_main);
+    if (layout->is_input_focused && wrapped_h <= single_line_h + 2 && (SDL_GetTicks() / 500) % 2 == 0)
     {
         int cursor_x = layout->chat_input_bar.x + 15 + text_width;
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
@@ -500,6 +598,10 @@ int run_chat_loop(SDL_Window *window, SDL_Renderer *renderer, TTF_Font *font_tit
             else if (event.type == SDL_TEXTINPUT)
             {
                 chat_controller_handle_textinput(&layout, event.text.text);
+            }
+            else if (event.type == SDL_MOUSEWHEEL)
+            {
+                chat_controller_handle_mousewheel(&layout, event.wheel.y);
             }
         }
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);

@@ -53,6 +53,9 @@ typedef struct
     int context_menu_x;
     int context_menu_y;
     char modal_buffer[256];
+
+    // Pixels scrolled up from the bottom (0 = pinned to the latest message)
+    int chat_scroll_offset;
 } ChatLayout;
 
 extern SDL_Rect modal_input_rect;

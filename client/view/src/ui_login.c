@@ -35,6 +35,38 @@ int get_text_width(TTF_Font *font, const char *text)
     return w;
 }
 
+int measure_text_wrapped_height(TTF_Font *font, const char *text, Uint32 wrap_width)
+{
+    if (!font || !text || text[0] == '\0')
+        return 0;
+    SDL_Surface *surface = TTF_RenderUTF8_Blended_Wrapped(font, text, (SDL_Color){0, 0, 0, 0}, wrap_width);
+    if (!surface)
+        return 0;
+    int h = surface->h;
+    SDL_FreeSurface(surface);
+    return h;
+}
+
+int draw_text_wrapped(SDL_Renderer *renderer, TTF_Font *font, const char *text, int x, int y,
+                      SDL_Color color, Uint32 wrap_width)
+{
+    if (!font || !text || text[0] == '\0')
+        return 0;
+    SDL_Surface *surface = TTF_RenderUTF8_Blended_Wrapped(font, text, color, wrap_width);
+    if (!surface)
+        return 0;
+    int h = surface->h;
+    SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
+    if (texture)
+    {
+        SDL_Rect dst = {x, y, surface->w, surface->h};
+        SDL_RenderCopy(renderer, texture, NULL, &dst);
+        SDL_DestroyTexture(texture);
+    }
+    SDL_FreeSurface(surface);
+    return h;
+}
+
 // Factorized function to draw text input fields (Background, Border, Text/Placeholder, Blinking cursor)
 static void draw_input_field(SDL_Renderer *renderer, TTF_Font *font_main, SDL_Rect rect, const char *text,
                              const char *placeholder, int is_focused, int show_cursor, int is_password,
