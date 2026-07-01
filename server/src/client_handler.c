@@ -289,11 +289,18 @@ void handler_channel_join(const Packet *pkt, ClientInfo *client, ServerState *s)
     }
 
     int channel_id = atoi(pkt->fields[0]);
+    int previous_channel_id = client->channel_id;
     db_channel_join(s->db, client->user_id, channel_id);
     client->channel_id = channel_id;
 
     printf("[handler] user %d joined channel %d\n", client->user_id, channel_id);
     reply_ok(client, "joined");
+
+    /* Refresh the roster for both the channel just joined (so its other
+       members see the newcomer) and the one just left (so it drops them) */
+    broadcast_user_list(s, channel_id);
+    if (previous_channel_id != -1 && previous_channel_id != channel_id)
+        broadcast_user_list(s, previous_channel_id);
 }
 
 void handler_channel_leave(const Packet *pkt, ClientInfo *client, ServerState *s)
@@ -315,6 +322,7 @@ void handler_channel_leave(const Packet *pkt, ClientInfo *client, ServerState *s
         client->channel_id = -1;
 
     reply_ok(client, "left");
+    broadcast_user_list(s, channel_id);
 }
 
 void handler_user_list(const Packet *pkt, ClientInfo *client, ServerState *s)
@@ -330,19 +338,7 @@ void handler_user_list(const Packet *pkt, ClientInfo *client, ServerState *s)
     }
 
     int channel_id = atoi(pkt->fields[0]);
-    char rows[64][100];
-    int count = db_user_list(s->db, channel_id, rows, 64);
-    if (count < 0) {
-        reply_error(client, "user_list: db error");
-        return;
-    }
-
-    for (int i = 0; i < count; i++) {
-        Packet push;
-        packet_build(&push, SERVER_PUSH, 1, rows[i]);
-        send_packet(client, &push);
-    }
-
+    broadcast_user_list(s, channel_id);
     reply_ok(client, "user_list: done");
 }
 

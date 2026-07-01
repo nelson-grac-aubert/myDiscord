@@ -42,4 +42,8 @@ void registry_remove(ClientRegistry *reg, ClientInfo *client);
 /* Send a packet to all clients in a given channel */
 void broadcast_to_channel(ClientRegistry *reg, int channel_id, const Packet *pkt);
 
+/* Send every client currently joined to channel_id the live roster of that
+   channel (authenticated, currently-connected users) */
+void broadcast_user_list(ServerState *s, int channel_id);
+
 #endif /* SERVER_H */

@@ -235,33 +235,6 @@ int db_channel_leave(PGconn *db, int user_id, int channel_id)
     return 0;
 }
 
-int db_user_list(PGconn *db, int channel_id, char users_out[][100], int max_rows)
-{
-    char cid[16];
-    snprintf(cid, sizeof(cid), "%d", channel_id);
-
-    const char *params[] = { cid };
-    PGresult *res = PQexecParams(db,
-        "SELECT DISTINCT u.email FROM \"user\" u "
-        "JOIN message m ON m.id_author = u.id_user "
-        "WHERE m.id_channel = $1",
-        1, NULL, params, NULL, NULL, 0);
-
-    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-        fprintf(stderr, "[db] user_list failed: %s\n", PQerrorMessage(db));
-        PQclear(res);
-        return -1;
-    }
-
-    int count = PQntuples(res);
-    if (count > max_rows) count = max_rows;
-    for (int i = 0; i < count; i++)
-        strncpy(users_out[i], PQgetvalue(res, i, 0), 99);
-
-    PQclear(res);
-    return count;
-}
-
 int db_user_ban(PGconn *db, int target_id, int banned_by, const char *reason)
 {
     char tid[16], bid[16];

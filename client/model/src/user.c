@@ -6,11 +6,6 @@ static int local_user_count = 0;
 
 void user_model_init(void) {
     local_user_count = 0;
-    
-    // Simulating connected members shown in the sidebar
-    user_model_add(1, "Nexus_One", 1);
-    user_model_add(2, "SARA_X", 1);
-    user_model_add(3, "AlexK", 1);
 }
 
 int user_model_get_online(User* out_users, int max_out) {

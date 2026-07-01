@@ -117,6 +117,41 @@ void broadcast_to_channel(ClientRegistry *reg, int channel_id, const Packet *pkt
     ReleaseMutex(reg->mutex);
 }
 
+/* Sends every currently-joined client in channel_id the full, current
+   roster of that channel as one "USERS:email1;email2;..." push, so
+   receivers just replace their local list rather than reconciling a diff.
+   Called on join/leave/disconnect so the member sidebar stays live. */
+void broadcast_user_list(ServerState *s, int channel_id)
+{
+    if (channel_id == -1)
+        return;
+
+    char payload[PACKET_FIELD_SIZE] = "USERS:";
+    size_t len = strlen(payload);
+
+    WaitForSingleObject(s->registry.mutex, INFINITE);
+
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        ClientInfo *c = s->registry.clients[i];
+        if (c != NULL && c->channel_id == channel_id && c->user_id != -1) {
+            size_t email_len = strlen(c->email);
+            if (len + email_len + 2 >= sizeof(payload))
+                break;
+            if (len > strlen("USERS:"))
+                payload[len++] = ';';
+            memcpy(payload + len, c->email, email_len);
+            len += email_len;
+            payload[len] = '\0';
+        }
+    }
+
+    ReleaseMutex(s->registry.mutex);
+
+    Packet push;
+    packet_build(&push, SERVER_PUSH, 1, payload);
+    broadcast_to_channel(&s->registry, channel_id, &push);
+}
+
 typedef struct {
     ClientInfo *client;
     ServerState *server;
@@ -187,7 +222,10 @@ static DWORD WINAPI client_thread(LPVOID arg)
 
     registry_add(&s->registry, client);
     handle_client_packets(client, s);
+
+    int last_channel_id = client->channel_id;
     registry_remove(&s->registry, client);
+    broadcast_user_list(s, last_channel_id);
 
     closesocket(client->sock);
     free(client);

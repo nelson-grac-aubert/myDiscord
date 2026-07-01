@@ -38,11 +38,6 @@ int db_channel_list(PGconn *db, int user_id,
 int db_channel_join(PGconn *db, int user_id, int channel_id);
 int db_channel_leave(PGconn *db, int user_id, int channel_id);
 
-/* Fills users_out with usernames in channel.
-   Returns row count, -1 on error. */
-int db_user_list(PGconn *db, int channel_id,
-                 char users_out[][100], int max_rows);
-
 /* Returns 0 on success, -1 on failure */
 int db_user_ban(PGconn *db, int target_id, int banned_by, const char *reason);
 

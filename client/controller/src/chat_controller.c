@@ -2,6 +2,7 @@
 #include "auth_controller.h"
 #include "channel.h"
 #include "message.h"
+#include "user.h"
 #include "ui_call.h"
 #include "ui_channels.h"
 #include "client_socket.h"
@@ -50,6 +51,10 @@ static void request_channel_join_and_history(int channel_id)
     Packet hist;
     packet_build(&hist, MSG_HISTORY, 2, id_str, lim_str);
     client_socket_send(&g_client_socket, &hist);
+
+    Packet users;
+    packet_build(&users, USER_LIST, 1, id_str);
+    client_socket_send(&g_client_socket, &users);
 }
 
 static void on_server_push(const Packet *pkt)
@@ -119,6 +124,27 @@ static void on_server_push(const Packet *pkt)
                     request_channel_join_and_history(id);
                 }
             }
+        }
+        return;
+    }
+
+    /* Live channel roster push: "USERS:email1;email2;..." - a full
+       snapshot of who's currently online in that channel, so it always
+       replaces whatever roster we had rather than appending to it */
+    if (strncmp(payload, "USERS:", 6) == 0) {
+        const char *data = payload + 6;
+        char buf[PACKET_FIELD_SIZE];
+        strncpy(buf, data, sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+
+        user_model_init();
+
+        int next_id = 1;
+        char *tok = strtok(buf, ";");
+        while (tok != NULL) {
+            if (strlen(tok) > 0)
+                user_model_add(next_id++, tok, 1);
+            tok = strtok(NULL, ";");
         }
         return;
     }
