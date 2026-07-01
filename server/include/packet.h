@@ -34,7 +34,7 @@ typedef enum {
     CHANNEL_LIST, 
  
     /* users */
-    USER_BAN,       /* user_id */
+    USER_BAN,       /* user_id | reason */
     USER_LIST,      /* no fields: server-wide online roster, not channel-scoped */
  
     /* responses */

@@ -139,9 +139,10 @@ static void on_server_push(const Packet *pkt)
         return;
     }
 
-    /* Live channel roster push: "USERS:email1;email2;..." - a full
-       snapshot of who's currently online in that channel, so it always
-       replaces whatever roster we had rather than appending to it */
+    /* Live server-wide roster push: "USERS:id1:email1;id2:email2;..." - a
+       full snapshot of who's currently online, so it always replaces
+       whatever roster we had rather than appending to it. The real
+       user_id is carried so a moderator/admin can target a ban. */
     if (strncmp(payload, "USERS:", 6) == 0) {
         const char *data = payload + 6;
         char buf[PACKET_FIELD_SIZE];
@@ -150,11 +151,16 @@ static void on_server_push(const Packet *pkt)
 
         user_model_init();
 
-        int next_id = 1;
         char *tok = strtok(buf, ";");
         while (tok != NULL) {
-            if (strlen(tok) > 0)
-                user_model_add(next_id++, tok, 1);
+            char *colon = strchr(tok, ':');
+            if (colon) {
+                *colon = '\0';
+                int uid = atoi(tok);
+                const char *uemail = colon + 1;
+                if (uid > 0 && strlen(uemail) > 0)
+                    user_model_add(uid, uemail, 1);
+            }
             tok = strtok(NULL, ";");
         }
         return;
@@ -265,6 +271,22 @@ void chat_controller_update_hover(ChatLayout *layout, int mx, int my)
 
 int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
 {
+    /* 0. Menu contextuel "Ban User" - tout clic pendant qu'il est ouvert le
+       referme ; seul un clic exact sur le bouton envoie le ban */
+    if (layout->show_user_context_menu) {
+        if (cx >= layout->btn_ban_user_rect.x && cx <= layout->btn_ban_user_rect.x + layout->btn_ban_user_rect.w &&
+            cy >= layout->btn_ban_user_rect.y && cy <= layout->btn_ban_user_rect.y + layout->btn_ban_user_rect.h) {
+            char id_str[16];
+            snprintf(id_str, sizeof(id_str), "%d", layout->context_menu_target_user_id);
+
+            Packet pkt;
+            packet_build(&pkt, USER_BAN, 2, id_str, "banned via UI");
+            client_socket_send(&g_client_socket, &pkt);
+        }
+        layout->show_user_context_menu = 0;
+        return 0;
+    }
+
     /* 1. Modal de création de salon */
     if (layout->show_create_modal) {
         if (cx >= modal_input_rect.x && cx <= modal_input_rect.x + modal_input_rect.w &&
@@ -490,7 +512,35 @@ void chat_controller_handle_mousewheel(ChatLayout *layout, int wheel_y)
 }
 
 void chat_controller_handle_right_click(ChatLayout *layout, int cx, int cy)
-{ (void)layout; (void)cx; (void)cy; }
+{
+    layout->show_user_context_menu = 0;
+
+    /* Only moderators/admins have any ban permission at all - don't even
+       offer the menu to a plain user (the server would reject it anyway) */
+    int my_role = auth_controller_get_role_id();
+    if (my_role != ROLE_MODERATOR && my_role != ROLE_ADMIN)
+        return;
+
+    if (cx < layout->sidebar_members.x || cx > layout->sidebar_members.x + layout->sidebar_members.w)
+        return;
+
+    User online_users[MAX_USERS];
+    int count = user_model_get_online(online_users, MAX_USERS);
+
+    int user_y = 55;
+    for (int i = 0; i < count; i++) {
+        if (cy >= user_y - 4 && cy <= user_y - 4 + 28) {
+            if (online_users[i].id != auth_controller_get_user_id()) {
+                layout->show_user_context_menu = 1;
+                layout->context_menu_target_user_id = online_users[i].id;
+                layout->context_menu_x = cx;
+                layout->context_menu_y = cy;
+            }
+            return;
+        }
+        user_y += 30;
+    }
+}
 
 void chat_controller_handle_menu_action(ChatLayout *layout, int cx, int cy)
 { (void)layout; (void)cx; (void)cy; }

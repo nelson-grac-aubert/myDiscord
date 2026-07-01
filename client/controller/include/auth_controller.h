@@ -13,6 +13,12 @@ typedef enum {
     AUTH_RESULT_ERROR
 } AuthResult;
 
+/* Matches the seeded rows in the `role` table (data/myDiscord.sql) and the
+   ROLE_* constants in server/include/server.h */
+#define ROLE_ADMIN     1
+#define ROLE_USER      2
+#define ROLE_MODERATOR 3
+
 int auth_controller_connect(const char *ip, int port);
 void auth_controller_login(UIState *state);
 void auth_controller_register(UIState *state);
@@ -23,6 +29,7 @@ void auth_controller_set_chat_callback(PacketCallback cb);
 AuthResult auth_controller_get_result(void);
 const char *auth_controller_get_error(void);
 int auth_controller_get_user_id(void);
+int auth_controller_get_role_id(void);
 void auth_controller_disconnect(void);
 
 #endif /* AUTH_CONTROLLER_H */

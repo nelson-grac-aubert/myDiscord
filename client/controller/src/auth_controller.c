@@ -10,6 +10,7 @@ ClientSocket g_client_socket;
 static AuthResult g_result  = AUTH_RESULT_PENDING;
 static char g_error[512]    = {0};
 static int g_user_id        = -1;
+static int g_role_id        = -1;
 static int g_auth_done      = 0; /* 1 once login/register succeeded */
 
 static PacketCallback g_chat_callback = NULL;
@@ -25,9 +26,10 @@ static void on_packet_received(const Packet *pkt)
     if (!g_auth_done) {
         if (pkt->type == SERVER_OK) {
             g_user_id  = pkt->field_count > 0 ? atoi(pkt->fields[0]) : -1;
+            g_role_id  = pkt->field_count > 1 ? atoi(pkt->fields[1]) : -1;
             g_result   = AUTH_RESULT_OK;
             g_auth_done = 1;
-            printf("[auth] ok, user_id=%d\n", g_user_id);
+            printf("[auth] ok, user_id=%d, role_id=%d\n", g_user_id, g_role_id);
             return;
         } else if (pkt->type == SERVER_ERROR) {
             strncpy(g_error,
@@ -49,6 +51,7 @@ int auth_controller_connect(const char *ip, int port)
 {
     g_result    = AUTH_RESULT_PENDING;
     g_user_id   = -1;
+    g_role_id   = -1;
     g_auth_done = 0;
     g_error[0]  = '\0';
 
@@ -84,6 +87,7 @@ void auth_controller_register(UIState *state)
 
 AuthResult auth_controller_get_result(void)    { return g_result; }
 int auth_controller_get_user_id(void)          { return g_user_id; }
+int auth_controller_get_role_id(void)          { return g_role_id; }
 
 const char *auth_controller_get_error(void)
 {

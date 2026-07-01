@@ -67,19 +67,22 @@ void handler_register(const Packet *pkt, ClientInfo *client, ServerState *s)
     const char *last_name  = pkt->fields[2];
     const char *password   = pkt->fields[3];
 
-    int user_id = db_user_register(s->db, email, first_name, last_name, password, 1);
+    /* New accounts always start as plain users - promotion to moderator/admin
+       has no self-service path, it must be done directly in the database */
+    int user_id = db_user_register(s->db, email, first_name, last_name, password, ROLE_USER);
     if (user_id == -1) {
         reply_error(client, "register: email already taken or db error");
         return;
     }
 
     client->user_id = user_id;
+    client->role_id = ROLE_USER;
     strncpy(client->email, email, sizeof(client->email) - 1);
     client->email[sizeof(client->email) - 1] = '\0';
     printf("[handler] REGISTER ok: client #%d is now user %d\n", client->id, user_id);
 
     char resp[32];
-    snprintf(resp, sizeof(resp), "%d", user_id);
+    snprintf(resp, sizeof(resp), "%d|%d", user_id, client->role_id);
     reply_ok(client, resp);
     broadcast_user_list(s);
 }
@@ -94,7 +97,8 @@ void handler_login(const Packet *pkt, ClientInfo *client, ServerState *s)
     const char *email    = pkt->fields[0];
     const char *password = pkt->fields[1];
 
-    int user_id = db_user_login(s->db, email, password);
+    int role_id = -1;
+    int user_id = db_user_login(s->db, email, password, &role_id);
     if (user_id == -1) {
         reply_error(client, "login: invalid credentials");
         return;
@@ -106,12 +110,13 @@ void handler_login(const Packet *pkt, ClientInfo *client, ServerState *s)
     }
 
     client->user_id = user_id;
+    client->role_id = role_id;
     strncpy(client->email, email, sizeof(client->email) - 1);
     client->email[sizeof(client->email) - 1] = '\0';
     printf("[handler] LOGIN ok: client #%d is now user %d\n", client->id, user_id);
 
     char resp[32];
-    snprintf(resp, sizeof(resp), "%d", user_id);
+    snprintf(resp, sizeof(resp), "%d|%d", user_id, client->role_id);
     reply_ok(client, resp);
     broadcast_user_list(s);
 }
@@ -305,7 +310,8 @@ void handler_channel_delete(const Packet *pkt, ClientInfo *client, ServerState *
     }
 
     int channel_id = atoi(pkt->fields[0]);
-    int ok = db_channel_delete(s->db, channel_id, client->user_id);
+    int is_admin = (client->role_id == ROLE_ADMIN);
+    int ok = db_channel_delete(s->db, channel_id, client->user_id, is_admin);
     if (ok != 0) {
         reply_error(client, "channel_delete: forbidden or db error");
         return;
@@ -381,6 +387,26 @@ void handler_user_ban(const Packet *pkt, ClientInfo *client, ServerState *s)
 
     int target_id      = atoi(pkt->fields[0]);
     const char *reason = pkt->fields[1];
+
+    /* moderator -> may ban a user; admin -> may ban a user or a moderator
+       (but not another admin); plain users can't ban anyone */
+    if (client->role_id != ROLE_MODERATOR && client->role_id != ROLE_ADMIN) {
+        reply_error(client, "user_ban: forbidden");
+        return;
+    }
+
+    int target_role = db_user_get_role(s->db, target_id);
+    if (target_role == -1) {
+        reply_error(client, "user_ban: target not found");
+        return;
+    }
+
+    int allowed = (client->role_id == ROLE_MODERATOR && target_role == ROLE_USER) ||
+                 (client->role_id == ROLE_ADMIN && (target_role == ROLE_USER || target_role == ROLE_MODERATOR));
+    if (!allowed) {
+        reply_error(client, "user_ban: forbidden");
+        return;
+    }
 
     int ok = db_user_ban(s->db, target_id, client->user_id, reason);
     if (ok != 0) {

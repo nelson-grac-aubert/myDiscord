@@ -118,11 +118,12 @@ void broadcast_to_channel(ClientRegistry *reg, int channel_id, const Packet *pkt
 }
 
 /* Sends every currently-connected, authenticated client the full, current
-   server-wide roster as one "USERS:email1;email2;..." push, so receivers
-   just replace their local list rather than reconciling a diff. Presence
-   is independent of which channel anyone is viewing - called on
-   login/register/disconnect so every client's member sidebar stays live
-   and identical regardless of channel. */
+   server-wide roster as one "USERS:id1:email1;id2:email2;..." push, so
+   receivers just replace their local list rather than reconciling a diff.
+   The real user_id is included (not just the email) so a client can target
+   a USER_BAN at a specific person. Presence is independent of which channel
+   anyone is viewing - called on login/register/disconnect so every
+   client's member sidebar stays live and identical regardless of channel. */
 void broadcast_user_list(ServerState *s)
 {
     char payload[PACKET_FIELD_SIZE] = "USERS:";
@@ -134,13 +135,14 @@ void broadcast_user_list(ServerState *s)
     for (int i = 0; i < MAX_CLIENTS; i++) {
         ClientInfo *c = s->registry.clients[i];
         if (c != NULL && c->user_id != -1) {
-            size_t email_len = strlen(c->email);
-            if (len + email_len + 2 >= sizeof(payload))
+            char entry[170];
+            int entry_len = snprintf(entry, sizeof(entry), "%d:%s", c->user_id, c->email);
+            if (entry_len < 0 || len + (size_t)entry_len + 2 >= sizeof(payload))
                 break;
             if (len > strlen("USERS:"))
                 payload[len++] = ';';
-            memcpy(payload + len, c->email, email_len);
-            len += email_len;
+            memcpy(payload + len, entry, entry_len);
+            len += entry_len;
             payload[len] = '\0';
         }
     }
@@ -249,6 +251,7 @@ static ClientInfo *make_client(SOCKET sock, struct sockaddr_in *addr, int id)
     client->user_id = -1;
     client->channel_id = -1;
     client->email[0] = '\0';
+    client->role_id = -1;
     strncpy(client->ip, inet_ntoa(addr->sin_addr), sizeof(client->ip) - 1);
     client->ip[sizeof(client->ip) - 1] = '\0';
     return client;

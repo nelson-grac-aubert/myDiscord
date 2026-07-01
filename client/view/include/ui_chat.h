@@ -56,6 +56,11 @@ typedef struct
 
     // Pixels scrolled up from the bottom (0 = pinned to the latest message)
     int chat_scroll_offset;
+
+    // Right-click context menu on a member of the online-users panel
+    int show_user_context_menu;
+    int context_menu_target_user_id;
+    SDL_Rect btn_ban_user_rect;
 } ChatLayout;
 
 extern SDL_Rect modal_input_rect;

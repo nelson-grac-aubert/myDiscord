@@ -512,6 +512,21 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
         SDL_RenderFillRect(renderer, &modal_btn_ok);
         draw_text(renderer, font_main, "Create", modal_btn_ok.x + 25, modal_btn_ok.y + 10, color_white);
     }
+
+    // 7. Menu contextuel "Ban User" (survol du panneau des membres en ligne)
+    if (layout->show_user_context_menu)
+    {
+        layout->btn_ban_user_rect = (SDL_Rect){layout->context_menu_x, layout->context_menu_y, 140, 32};
+
+        SDL_SetRenderDrawColor(renderer, 0x2B, 0x2D, 0x31, 0xFF);
+        SDL_RenderFillRect(renderer, &layout->btn_ban_user_rect);
+        SDL_SetRenderDrawColor(renderer, 0x3F, 0x41, 0x47, 0xFF);
+        SDL_RenderDrawRect(renderer, &layout->btn_ban_user_rect);
+
+        SDL_Color ban_color = {0xF0, 0x47, 0x47, 0xFF};
+        draw_text(renderer, font_main, "Ban User", layout->btn_ban_user_rect.x + 14,
+                 layout->btn_ban_user_rect.y + 8, ban_color);
+    }
 }
 
 int run_chat_loop(SDL_Window *window, SDL_Renderer *renderer, TTF_Font *font_title, TTF_Font *font_main, TTF_Font *font_sub)
@@ -589,6 +604,10 @@ int run_chat_loop(SDL_Window *window, SDL_Renderer *renderer, TTF_Font *font_tit
                         running = 0;
                         exit_status = 2;
                     }
+                }
+                else if (event.button.button == SDL_BUTTON_RIGHT)
+                {
+                    chat_controller_handle_right_click(&layout, cx, cy);
                 }
             }
             else if (event.type == SDL_KEYDOWN)
