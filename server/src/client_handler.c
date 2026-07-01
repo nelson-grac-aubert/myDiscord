@@ -56,7 +56,6 @@ void client_handler_dispatch(const Packet *pkt, ClientInfo *client, ServerState 
 
 void handler_register(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
-    /* Expected fields: email, first_name, last_name, password */
     if (pkt->field_count < 4) {
         reply_error(client, "register: missing fields");
         return;
@@ -83,7 +82,6 @@ void handler_register(const Packet *pkt, ClientInfo *client, ServerState *s)
 
 void handler_login(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
-    /* Expected fields: email, password */
     if (pkt->field_count < 2) {
         reply_error(client, "login: missing fields");
         return;
@@ -115,7 +113,7 @@ void handler_logout(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
     (void)pkt; (void)s;
     printf("[handler] LOGOUT: user %d\n", client->user_id);
-    client->user_id   = -1;
+    client->user_id    = -1;
     client->channel_id = -1;
     reply_ok(client, "logged out");
 }
@@ -127,9 +125,8 @@ void handler_msg_send(const Packet *pkt, ClientInfo *client, ServerState *s)
         return;
     }
 
-    /* Expected fields: content */
-    if (pkt->field_count < 1) {
-        reply_error(client, "msg_send: missing content");
+    if (pkt->field_count < 2) {
+        reply_error(client, "msg_send: missing fields");
         return;
     }
 
@@ -138,15 +135,22 @@ void handler_msg_send(const Packet *pkt, ClientInfo *client, ServerState *s)
         return;
     }
 
-    int ok = db_message_insert(s->db, client->user_id, client->channel_id, pkt->fields[0]);
+    /* fields[0] = channel_id (ignored, we use client->channel_id)
+       fields[1] = content */
+    const char *content = pkt->fields[1];
+
+    int ok = db_message_insert(s->db, client->user_id, client->channel_id, content);
     if (ok != 0) {
         reply_error(client, "msg_send: db error");
         return;
     }
 
-    /* Build push packet and broadcast to everyone in the channel */
+    /* Broadcast "email|content" so receiver can display username */
+    char push_payload[PACKET_FIELD_SIZE];
+    snprintf(push_payload, sizeof(push_payload), "Me|%s", content);
+
     Packet push;
-    packet_build(&push, SERVER_PUSH, 1, pkt->fields[0]);
+    packet_build(&push, SERVER_PUSH, 1, push_payload);
     broadcast_to_channel(&s->registry, client->channel_id, &push);
 }
 
@@ -157,7 +161,6 @@ void handler_msg_history(const Packet *pkt, ClientInfo *client, ServerState *s)
         return;
     }
 
-    /* Expected fields: channel_id, limit */
     if (pkt->field_count < 2) {
         reply_error(client, "msg_history: missing fields");
         return;
@@ -189,7 +192,6 @@ void handler_reaction(const Packet *pkt, ClientInfo *client, ServerState *s)
         reply_error(client, "reaction: not authenticated");
         return;
     }
-    /* TODO: persist reaction to DB, broadcast to channel members */
     reply_ok(client, "reaction stub");
 }
 
@@ -209,8 +211,11 @@ void handler_channel_list(const Packet *pkt, ClientInfo *client, ServerState *s)
     }
 
     for (int i = 0; i < count; i++) {
+        /* Prefix with "CHAN:" so client can distinguish from message pushes */
+        char prefixed[110];
+        snprintf(prefixed, sizeof(prefixed), "CHAN:%s", rows[i]);
         Packet push;
-        packet_build(&push, SERVER_PUSH, 1, rows[i]);
+        packet_build(&push, SERVER_PUSH, 1, prefixed);
         send_packet(client, &push);
     }
 
@@ -224,7 +229,6 @@ void handler_channel_create(const Packet *pkt, ClientInfo *client, ServerState *
         return;
     }
 
-    /* Expected fields: name, is_private */
     if (pkt->field_count < 2) {
         reply_error(client, "channel_create: missing fields");
         return;
@@ -341,13 +345,12 @@ void handler_user_ban(const Packet *pkt, ClientInfo *client, ServerState *s)
         return;
     }
 
-    /* Expected fields: target_user_id, reason */
     if (pkt->field_count < 2) {
         reply_error(client, "user_ban: missing fields");
         return;
     }
 
-    int target_id = atoi(pkt->fields[0]);
+    int target_id      = atoi(pkt->fields[0]);
     const char *reason = pkt->fields[1];
 
     int ok = db_user_ban(s->db, target_id, client->user_id, reason);

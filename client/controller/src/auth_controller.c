@@ -10,8 +10,8 @@ ClientSocket g_client_socket;
 static AuthResult g_result  = AUTH_RESULT_PENDING;
 static char g_error[512]    = {0};
 static int g_user_id        = -1;
+static int g_auth_done      = 0; /* 1 once login/register succeeded */
 
-/* Secondary callback registered by chat_controller for SERVER_PUSH etc. */
 static PacketCallback g_chat_callback = NULL;
 
 void auth_controller_set_chat_callback(PacketCallback cb)
@@ -21,28 +21,36 @@ void auth_controller_set_chat_callback(PacketCallback cb)
 
 static void on_packet_received(const Packet *pkt)
 {
-    if (pkt->type == SERVER_OK) {
-        g_user_id = pkt->field_count > 0 ? atoi(pkt->fields[0]) : -1;
-        g_result  = AUTH_RESULT_OK;
-        printf("[auth] ok, user_id=%d\n", g_user_id);
-    } else if (pkt->type == SERVER_ERROR) {
-        strncpy(g_error,
-                pkt->field_count > 0 ? pkt->fields[0] : "unknown error",
-                sizeof(g_error) - 1);
-        g_error[sizeof(g_error) - 1] = '\0';
-        g_result = AUTH_RESULT_ERROR;
-        printf("[auth] error: %s\n", g_error);
-    } else if (g_chat_callback) {
-        /* Forward all other packets (SERVER_PUSH etc.) to chat controller */
-        g_chat_callback(pkt);
+    /* During auth phase, handle SERVER_OK/ERROR ourselves */
+    if (!g_auth_done) {
+        if (pkt->type == SERVER_OK) {
+            g_user_id  = pkt->field_count > 0 ? atoi(pkt->fields[0]) : -1;
+            g_result   = AUTH_RESULT_OK;
+            g_auth_done = 1;
+            printf("[auth] ok, user_id=%d\n", g_user_id);
+            return;
+        } else if (pkt->type == SERVER_ERROR) {
+            strncpy(g_error,
+                    pkt->field_count > 0 ? pkt->fields[0] : "unknown error",
+                    sizeof(g_error) - 1);
+            g_error[sizeof(g_error) - 1] = '\0';
+            g_result = AUTH_RESULT_ERROR;
+            printf("[auth] error: %s\n", g_error);
+            return;
+        }
     }
+
+    /* Once authenticated, forward everything to chat controller */
+    if (g_chat_callback)
+        g_chat_callback(pkt);
 }
 
 int auth_controller_connect(const char *ip, int port)
 {
-    g_result   = AUTH_RESULT_PENDING;
-    g_user_id  = -1;
-    g_error[0] = '\0';
+    g_result    = AUTH_RESULT_PENDING;
+    g_user_id   = -1;
+    g_auth_done = 0;
+    g_error[0]  = '\0';
 
     if (client_socket_connect(&g_client_socket, ip, port, on_packet_received) != 0)
         return -1;
@@ -52,7 +60,8 @@ int auth_controller_connect(const char *ip, int port)
 
 void auth_controller_login(UIState *state)
 {
-    g_result = AUTH_RESULT_PENDING;
+    g_result    = AUTH_RESULT_PENDING;
+    g_auth_done = 0;
 
     Packet pkt;
     packet_build(&pkt, AUTH_LOGIN, 2, state->text_email, state->text_password);
@@ -61,7 +70,8 @@ void auth_controller_login(UIState *state)
 
 void auth_controller_register(UIState *state)
 {
-    g_result = AUTH_RESULT_PENDING;
+    g_result    = AUTH_RESULT_PENDING;
+    g_auth_done = 0;
 
     Packet pkt;
     packet_build(&pkt, AUTH_REGISTER, 4,
@@ -82,5 +92,6 @@ const char *auth_controller_get_error(void)
 
 void auth_controller_disconnect(void)
 {
+    g_auth_done = 0;
     client_socket_disconnect(&g_client_socket);
 }

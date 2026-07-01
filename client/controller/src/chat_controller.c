@@ -22,29 +22,53 @@ extern SDL_Rect modal_bg_rect, modal_input_rect, modal_toggle_rect,
 
 static char *open_file_explorer(void);
 
-/* Called from the listener thread when a SERVER_PUSH arrives */
 static void on_server_push(const Packet *pkt)
 {
-    if (pkt->type != SERVER_PUSH || pkt->field_count < 1)
+    if (pkt->field_count < 1)
         return;
 
-    /* SERVER_PUSH format: "username|content" */
+    const char *payload = pkt->fields[0];
+
+    /* CHANNEL_LIST push: "CHAN:id|name|is_private" */
+    if (strncmp(payload, "CHAN:", 4) == 0) {
+        const char *data = payload + 4;
+        char buf[100];
+        strncpy(buf, data, sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+
+        char *p1 = strtok(buf, "|");
+        char *p2 = strtok(NULL, "|");
+        char *p3 = strtok(NULL, "|");
+
+        if (p1 && p2 && p3) {
+            int id = atoi(p1);
+            int is_private = (p3[0] == '1' || p3[0] == 't');
+            int found = 0;
+            for (int i = 0; i < channel_model_get_count(); i++) {
+                Channel *ch = channel_model_get_by_index(i);
+                if (ch && ch->id == id) { found = 1; break; }
+            }
+            if (!found)
+                channel_model_add(id, p2, is_private);
+        }
+        return;
+    }
+
+    /* Regular message push: "username|content" */
     char raw[PACKET_FIELD_SIZE];
-    strncpy(raw, pkt->fields[0], sizeof(raw) - 1);
+    strncpy(raw, payload, sizeof(raw) - 1);
     raw[sizeof(raw) - 1] = '\0';
+
+    Channel *active = channel_model_get_active();
+    if (!active)
+        return;
 
     char *sep = strchr(raw, '|');
     if (sep) {
         *sep = '\0';
-        char *username = raw;
-        char *content  = sep + 1;
-        Channel *active = channel_model_get_active();
-        if (active)
-            message_model_add(0, active->id, username, content);
+        message_model_add(0, active->id, raw, sep + 1);
     } else {
-        Channel *active = channel_model_get_active();
-        if (active)
-            message_model_add(0, active->id, "unknown", raw);
+        message_model_add(0, active->id, "unknown", raw);
     }
 }
 
@@ -65,7 +89,7 @@ static void send_message(ChatLayout *layout, Channel *active)
         return;
     }
 
-    /* Show locally immediately */
+    /* Show locally immediately, server will broadcast to others */
     message_model_add(0, active->id, "Me", layout->input_buffer);
     layout->input_buffer[0] = '\0';
 }
@@ -103,11 +127,9 @@ void chat_controller_init(ChatLayout *layout, SDL_Renderer *renderer)
     layout->show_context_menu = 0;
     g_is_mic_muted = 0;
 
-    /* Register our push handler and request initial data */
     auth_controller_set_chat_callback(on_server_push);
     request_channel_list();
 
-    /* Auto-join first channel if any */
     Channel *first = channel_model_get_by_index(0);
     if (first)
         request_channel_join(first->id);
@@ -138,14 +160,12 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
         if (cx >= modal_btn_ok.x && cx <= modal_btn_ok.x + modal_btn_ok.w &&
             cy >= modal_btn_ok.y && cy <= modal_btn_ok.y + modal_btn_ok.h) {
             if (strlen(layout->modal_buffer) > 0) {
-                /* Send to server */
                 char priv_str[2];
                 snprintf(priv_str, sizeof(priv_str), "%d", layout->modal_is_private);
                 Packet pkt;
                 packet_build(&pkt, CHANNEL_CREATE, 2, layout->modal_buffer, priv_str);
                 client_socket_send(&g_client_socket, &pkt);
 
-                /* Add locally */
                 int next_id = channel_model_get_count() + 1;
                 channel_model_add(next_id, layout->modal_buffer, layout->modal_is_private);
                 layout->show_create_modal = 0;
