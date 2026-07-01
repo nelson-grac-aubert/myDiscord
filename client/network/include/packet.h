@@ -24,7 +24,8 @@ typedef enum {
     MSG_SEND,       /* channel_id | content */
     MSG_HISTORY,    /* channel_id */
     MSG_REACTION,   /* message_id | emoji */
- 
+    MSG_DELETE,     /* message_id */
+
     /* channels */
     CHANNEL_JOIN,   /* channel_id */
     CHANNEL_LEAVE,  /* channel_id */

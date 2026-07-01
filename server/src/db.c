@@ -1,5 +1,6 @@
 #include "../include/db.h"
 #include "../include/crypto.h"
+#include "message_crypto.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -93,17 +94,28 @@ int db_user_is_banned(PGconn *db, int user_id)
     return banned;
 }
 
-int db_message_insert(PGconn *db, int user_id, int channel_id, const char *content)
+int db_message_insert(PGconn *db, int user_id, int channel_id, const char *content,
+                      char *timestamp_out)
 {
     char uid[16], cid[16];
     snprintf(uid, sizeof(uid), "%d", user_id);
     snprintf(cid, sizeof(cid), "%d", channel_id);
 
-    /* No encryption yet: content_iv is placeholder */
-    const char *params[] = { content, "iv_placeholder", uid, cid };
+    /* Base64(AES-256-CBC(content)) can be larger than the plaintext, and
+       message_crypto_encrypt_field does not bound-check its output buffers,
+       so these must be sized for the worst case (a max-length packet field
+       plus one padding block, base64-expanded) rather than content's size */
+    char cipher_b64[800];
+    char iv_b64[32];
+    if (message_crypto_encrypt_field(content, cipher_b64, iv_b64) != 0) {
+        fprintf(stderr, "[db] message encryption failed\n");
+        return -1;
+    }
+
+    const char *params[] = { cipher_b64, iv_b64, uid, cid };
     PGresult *res = PQexecParams(db,
         "INSERT INTO message (encrypted_content, content_iv, id_author, id_channel) "
-        "VALUES ($1, $2, $3, $4) RETURNING id_message",
+        "VALUES ($1, $2, $3, $4) RETURNING id_message, to_char(sent_at, 'HH24:MI')",
         4, NULL, params, NULL, NULL, 0);
 
     if (!exec_has_rows(res)) {
@@ -113,6 +125,8 @@ int db_message_insert(PGconn *db, int user_id, int channel_id, const char *conte
     }
 
     int id = atoi(PQgetvalue(res, 0, 0));
+    strncpy(timestamp_out, PQgetvalue(res, 0, 1), 5);
+    timestamp_out[5] = '\0';
     PQclear(res);
     return id;
 }
@@ -124,11 +138,18 @@ int db_message_history(PGconn *db, int channel_id, int limit,
     snprintf(cid, sizeof(cid), "%d", channel_id);
     snprintf(lim, sizeof(lim), "%d", limit < max_rows ? limit : max_rows);
 
+    /* The inner query needs sent_at DESC to grab the *last* N messages, but
+       they must reach the client oldest-first for a normal chat reading
+       order, so the outer query re-sorts chronologically by id_message
+       (always monotonic with sent_at, since it's a SERIAL) */
     const char *params[] = { cid, lim };
     PGresult *res = PQexecParams(db,
-        "SELECT u.email, m.encrypted_content, m.id_message FROM message m "
-        "JOIN \"user\" u ON u.id_user = m.id_author "
-        "WHERE m.id_channel = $1 ORDER BY m.sent_at DESC LIMIT $2",
+        "SELECT * FROM ("
+        "  SELECT u.email, m.encrypted_content, m.id_message, m.content_iv, "
+        "         to_char(m.sent_at, 'HH24:MI') AS ts "
+        "  FROM message m JOIN \"user\" u ON u.id_user = m.id_author "
+        "  WHERE m.id_channel = $1 ORDER BY m.sent_at DESC LIMIT $2"
+        ") sub ORDER BY sub.id_message ASC",
         2, NULL, params, NULL, NULL, 0);
 
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
@@ -138,12 +159,43 @@ int db_message_history(PGconn *db, int channel_id, int limit,
     }
 
     int count = PQntuples(res);
-    for (int i = 0; i < count; i++)
-        snprintf(messages_out[i], 512, "%d|%s|%s|%s", channel_id,
-                 PQgetvalue(res, i, 2), PQgetvalue(res, i, 0), PQgetvalue(res, i, 1));
+    for (int i = 0; i < count; i++) {
+        char plaintext[PACKET_FIELD_SIZE];
+        if (message_crypto_decrypt_field(PQgetvalue(res, i, 1), PQgetvalue(res, i, 3),
+                                          plaintext, sizeof(plaintext)) != 0) {
+            fprintf(stderr, "[db] message decryption failed for id_message=%s\n",
+                    PQgetvalue(res, i, 2));
+            snprintf(plaintext, sizeof(plaintext), "<message could not be decrypted>");
+        }
+        snprintf(messages_out[i], 512, "%d|%s|%s|%s|%.330s", channel_id,
+                 PQgetvalue(res, i, 2), PQgetvalue(res, i, 4),
+                 PQgetvalue(res, i, 0), plaintext);
+    }
 
     PQclear(res);
     return count;
+}
+
+int db_message_delete(PGconn *db, int message_id, int requester_id, int *channel_id_out)
+{
+    char mid[16], uid[16];
+    snprintf(mid, sizeof(mid), "%d", message_id);
+    snprintf(uid, sizeof(uid), "%d", requester_id);
+
+    const char *params[] = { mid, uid };
+    PGresult *res = PQexecParams(db,
+        "DELETE FROM message WHERE id_message = $1 AND id_author = $2 "
+        "RETURNING id_channel",
+        2, NULL, params, NULL, NULL, 0);
+
+    if (!exec_has_rows(res)) {
+        PQclear(res);
+        return -1;
+    }
+
+    *channel_id_out = atoi(PQgetvalue(res, 0, 0));
+    PQclear(res);
+    return 0;
 }
 
 int db_channel_create(PGconn *db, const char *name, int is_private, int creator_id)

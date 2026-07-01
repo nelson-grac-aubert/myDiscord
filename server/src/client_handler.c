@@ -40,6 +40,7 @@ void client_handler_dispatch(const Packet *pkt, ClientInfo *client, ServerState 
         case MSG_SEND: handler_msg_send(pkt, client, s); break;
         case MSG_HISTORY: handler_msg_history(pkt, client, s); break;
         case MSG_REACTION: handler_reaction(pkt, client, s); break;
+        case MSG_DELETE: handler_msg_delete(pkt, client, s); break;
         case CHANNEL_LIST: handler_channel_list(pkt, client, s); break;
         case CHANNEL_CREATE: handler_channel_create(pkt, client, s); break;
         case CHANNEL_DELETE: handler_channel_delete(pkt, client, s); break;
@@ -143,23 +144,57 @@ void handler_msg_send(const Packet *pkt, ClientInfo *client, ServerState *s)
        fields[1] = content */
     const char *content = pkt->fields[1];
 
-    int message_id = db_message_insert(s->db, client->user_id, client->channel_id, content);
+    char timestamp[8];
+    int message_id = db_message_insert(s->db, client->user_id, client->channel_id,
+                                       content, timestamp);
     if (message_id == -1) {
         reply_error(client, "msg_send: db error");
         return;
     }
 
-    /* Broadcast "channel_id|message_id|sender_email|content" so receivers can
-       route the message to the right channel, show who actually sent it
-       (including to the sender's own client), and dedupe it against the
-       same message re-arriving via a later MSG_HISTORY fetch */
+    /* Broadcast "channel_id|message_id|HH:MM|sender_email|content" so
+       receivers can route the message to the right channel, show who
+       actually sent it and when (including to the sender's own client),
+       and dedupe it against the same message re-arriving via a later
+       MSG_HISTORY fetch */
     char push_payload[PACKET_FIELD_SIZE];
-    snprintf(push_payload, PACKET_FIELD_SIZE, "%d|%d|%s|%.330s",
-             client->channel_id, message_id, client->email, content);
+    snprintf(push_payload, PACKET_FIELD_SIZE, "%d|%d|%s|%s|%.320s",
+             client->channel_id, message_id, timestamp, client->email, content);
 
     Packet push;
     packet_build(&push, SERVER_PUSH, 1, push_payload);
     broadcast_to_channel(&s->registry, client->channel_id, &push);
+}
+
+void handler_msg_delete(const Packet *pkt, ClientInfo *client, ServerState *s)
+{
+    if (!client_is_authenticated(client)) {
+        reply_error(client, "msg_delete: not authenticated");
+        return;
+    }
+
+    if (pkt->field_count < 1) {
+        reply_error(client, "msg_delete: missing message_id");
+        return;
+    }
+
+    int message_id = atoi(pkt->fields[0]);
+    int channel_id = -1;
+    if (db_message_delete(s->db, message_id, client->user_id, &channel_id) != 0) {
+        reply_error(client, "msg_delete: forbidden or not found");
+        return;
+    }
+
+    reply_ok(client, "deleted");
+
+    /* Tell everyone currently in that channel (including the requester) to
+       drop the message, rather than removing it locally before the server
+       confirms - keeps every client's view consistent */
+    char payload[32];
+    snprintf(payload, sizeof(payload), "DELMSG:%d", message_id);
+    Packet push;
+    packet_build(&push, SERVER_PUSH, 1, payload);
+    broadcast_to_channel(&s->registry, channel_id, &push);
 }
 
 void handler_msg_history(const Packet *pkt, ClientInfo *client, ServerState *s)

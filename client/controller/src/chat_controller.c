@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -36,6 +37,13 @@ extern SDL_Rect modal_bg_rect, modal_input_rect, modal_toggle_rect,
                modal_btn_ok, modal_btn_cancel;
 
 static char *open_file_explorer(void);
+
+static void local_time_hhmm(char *out, size_t out_size)
+{
+    time_t now = time(NULL);
+    struct tm *tm_now = localtime(&now);
+    strftime(out, out_size, "%H:%M", tm_now);
+}
 
 static void request_channel_join_and_history(int channel_id)
 {
@@ -149,7 +157,15 @@ static void on_server_push(const Packet *pkt)
         return;
     }
 
-    /* Regular message push: "channel_id|message_id|username|content" */
+    /* Message deletion push: "DELMSG:message_id" - broadcast to everyone in
+       the channel (including whoever asked for the delete), so the message
+       only disappears once the server actually confirmed it */
+    if (strncmp(payload, "DELMSG:", 7) == 0) {
+        message_model_delete_by_id(atoi(payload + 7));
+        return;
+    }
+
+    /* Regular message push: "channel_id|message_id|HH:MM|username|content" */
     char raw[PACKET_FIELD_SIZE];
     strncpy(raw, payload, sizeof(raw) - 1);
     raw[sizeof(raw) - 1] = '\0';
@@ -169,11 +185,18 @@ static void on_server_push(const Packet *pkt)
     rest = sep2 + 1;
 
     char *sep3 = strchr(rest, '|');
-    if (sep3) {
-        *sep3 = '\0';
-        message_model_add(message_id, channel_id, rest, sep3 + 1);
+    if (!sep3)
+        return;
+    *sep3 = '\0';
+    const char *timestamp = rest;
+    rest = sep3 + 1;
+
+    char *sep4 = strchr(rest, '|');
+    if (sep4) {
+        *sep4 = '\0';
+        message_model_add(message_id, channel_id, rest, sep4 + 1, timestamp);
     } else {
-        message_model_add(message_id, channel_id, "unknown", rest);
+        message_model_add(message_id, channel_id, "unknown", rest, timestamp);
     }
 }
 
@@ -302,7 +325,11 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
         char *file_path = open_file_explorer();
         if (file_path && strlen(file_path) > 0) {
             Channel *active = channel_model_get_active();
-            if (active) message_model_add(0, active->id, "Me", file_path);
+            if (active) {
+                char ts[8];
+                local_time_hhmm(ts, sizeof(ts));
+                message_model_add(0, active->id, "Me", file_path, ts);
+            }
         }
         return 1;
     }
@@ -363,9 +390,20 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
         cy >= layout->btn_delete_message_rect.y &&
         cy <= layout->btn_delete_message_rect.y + layout->btn_delete_message_rect.h) {
         Channel *active = channel_model_get_active();
-        if (active)
-            message_model_delete_by_index_in_channel(active->id,
+        if (active) {
+            int msg_id = message_model_get_id_by_index_in_channel(active->id,
                 layout->hover_message_delete_index);
+            /* Only ask the server to delete; the message only disappears
+               once the DELMSG broadcast confirms it (e.g. rejects deleting
+               someone else's message) */
+            if (msg_id > 0) {
+                char id_str[16];
+                snprintf(id_str, sizeof(id_str), "%d", msg_id);
+                Packet pkt;
+                packet_build(&pkt, MSG_DELETE, 1, id_str);
+                client_socket_send(&g_client_socket, &pkt);
+            }
+        }
         layout->hover_message_delete_index = -1;
         return 0;
     }

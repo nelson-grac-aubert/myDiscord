@@ -15,6 +15,7 @@ void handler_logout  (const Packet *pkt, ClientInfo *client, ServerState *s);
 void handler_msg_send   (const Packet *pkt, ClientInfo *client, ServerState *s);
 void handler_msg_history(const Packet *pkt, ClientInfo *client, ServerState *s);
 void handler_reaction   (const Packet *pkt, ClientInfo *client, ServerState *s);
+void handler_msg_delete (const Packet *pkt, ClientInfo *client, ServerState *s);
 
 /* Channels */
 void handler_channel_list  (const Packet *pkt, ClientInfo *client, ServerState *s);

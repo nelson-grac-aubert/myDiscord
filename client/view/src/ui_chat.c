@@ -95,7 +95,8 @@ static void draw_chat_messages(SDL_Renderer *renderer, ChatLayout *layout, TTF_F
         if (is_img)
         {
             char user_header[128];
-            snprintf(user_header, sizeof(user_header), "[%s]: ", active_msgs[i].username);
+            snprintf(user_header, sizeof(user_header), "%s  %s: ",
+                     active_msgs[i].timestamp, active_msgs[i].username);
             draw_text(renderer, font_main, user_header, layout->chat_area.x + 20, start_y, white);
             
             SDL_Texture *img_tex = NULL;
@@ -118,8 +119,9 @@ static void draw_chat_messages(SDL_Renderer *renderer, ChatLayout *layout, TTF_F
         }
         else
         {
-            char full_msg[512];
-            snprintf(full_msg, sizeof(full_msg), "[%s]: %s", active_msgs[i].username, active_msgs[i].text);
+            char full_msg[560];
+            snprintf(full_msg, sizeof(full_msg), "%s  %s: %s",
+                     active_msgs[i].timestamp, active_msgs[i].username, active_msgs[i].text);
             draw_text(renderer, font_main, full_msg, layout->chat_area.x + 20, start_y, white);
         }
 

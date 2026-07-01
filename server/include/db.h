@@ -14,14 +14,21 @@ int db_user_login(PGconn *db, const char *email, const char *password);
 /* Returns 1 if user is banned, 0 if not, -1 on error */
 int db_user_is_banned(PGconn *db, int user_id);
 
-/* Returns the new id_message on success, -1 on error */
+/* Returns the new id_message on success, -1 on error.
+   timestamp_out must be at least 6 bytes ("HH:MM\0"), filled with the
+   message's actual sent_at as recorded by the database. */
 int db_message_insert(PGconn *db, int user_id, int channel_id,
-                      const char *content);
+                      const char *content, char *timestamp_out);
 
-/* Fills messages_out with last limit messages in channel.
-   Each row: "id_message|username|content\0". Returns row count, -1 on error. */
+/* Fills messages_out with last limit messages in channel, oldest first.
+   Each row: "id_message|HH:MM|username|content\0". Returns row count, -1 on error. */
 int db_message_history(PGconn *db, int channel_id, int limit,
                        char messages_out[][512], int max_rows);
+
+/* Deletes a message if requester_id is its author. On success returns 0 and
+   fills channel_id_out with the channel it belonged to (needed to scope the
+   deletion broadcast). Returns -1 if not found or not the author. */
+int db_message_delete(PGconn *db, int message_id, int requester_id, int *channel_id_out);
 
 /* Returns id_channel on success, -1 on failure */
 int db_channel_create(PGconn *db, const char *name, int is_private, int creator_id);

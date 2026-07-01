@@ -21,7 +21,8 @@ int message_model_get_for_channel(int channel_id, Message* out_messages, int max
     return count;
 }
 
-void message_model_add(int id, int channel_id, const char* username, const char* text) {
+void message_model_add(int id, int channel_id, const char* username, const char* text,
+                       const char* timestamp) {
     /* Real server-assigned ids (id > 0) can re-arrive via a later MSG_HISTORY
        fetch (e.g. re-joining a channel already viewed this session); skip
        re-adding a message we already have. Locally-originated placeholder
@@ -47,28 +48,32 @@ void message_model_add(int id, int channel_id, const char* username, const char*
     msg->username[31] = '\0';
     strncpy(msg->text, text, MAX_MSG_LENGTH - 1);
     msg->text[MAX_MSG_LENGTH - 1] = '\0';
+    strncpy(msg->timestamp, timestamp ? timestamp : "", 7);
+    msg->timestamp[7] = '\0';
 
     global_message_count++;
 }
 
-void message_model_delete_by_index_in_channel(int channel_id, int index_in_channel) {
-    int current_match = 0;
-    int target_global_index = -1;
+void message_model_delete_by_id(int id) {
+    for (int i = 0; i < global_message_count; i++) {
+        if (global_messages[i].id == id) {
+            for (int j = i; j < global_message_count - 1; j++) {
+                global_messages[j] = global_messages[j + 1];
+            }
+            global_message_count--;
+            return;
+        }
+    }
+}
 
+int message_model_get_id_by_index_in_channel(int channel_id, int index_in_channel) {
+    int current_match = 0;
     for (int i = 0; i < global_message_count; i++) {
         if (global_messages[i].channel_id == channel_id) {
-            if (current_match == index_in_channel) {
-                target_global_index = i;
-                break;
-            }
+            if (current_match == index_in_channel)
+                return global_messages[i].id;
             current_match++;
         }
     }
-
-    if (target_global_index != -1) {
-        for (int i = target_global_index; i < global_message_count - 1; i++) {
-            global_messages[i] = global_messages[i + 1];
-        }
-        global_message_count--;
-    }
+    return -1;
 }
