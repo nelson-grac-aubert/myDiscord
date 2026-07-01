@@ -147,7 +147,7 @@ void handler_msg_send(const Packet *pkt, ClientInfo *client, ServerState *s)
 
     /* Broadcast "email|content" so receiver can display username */
     char push_payload[PACKET_FIELD_SIZE];
-    snprintf(push_payload, sizeof(push_payload), "Me|%s", content);
+    snprintf(push_payload, PACKET_FIELD_SIZE, "Me|%.507s", content);
 
     Packet push;
     packet_build(&push, SERVER_PUSH, 1, push_payload);
@@ -212,8 +212,8 @@ void handler_channel_list(const Packet *pkt, ClientInfo *client, ServerState *s)
 
     for (int i = 0; i < count; i++) {
         /* Prefix with "CHAN:" so client can distinguish from message pushes */
-        char prefixed[110];
-        snprintf(prefixed, sizeof(prefixed), "CHAN:%s", rows[i]);
+        char prefixed[105]; /* rows[i] is max 100 chars, "CHAN:" adds 5 */
+        snprintf(prefixed, sizeof(prefixed), "CHAN:%.99s", rows[i]);
         Packet push;
         packet_build(&push, SERVER_PUSH, 1, prefixed);
         send_packet(client, &push);
