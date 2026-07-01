@@ -19,4 +19,11 @@ int reaction_model_get_for_message(int message_id, Reaction* out_reactions, int 
 void reaction_model_add(int message_id, int user_id, const char* emoji);
 void reaction_model_remove(int message_id, int user_id, const char* emoji);
 
+// Removes every reaction attached to a message (used before repopulating
+// from a fresh server snapshot)
+void reaction_model_clear_for_message(int message_id);
+
+// Returns 1 if user_id has an active reaction on message_id, 0 otherwise
+int reaction_model_user_has_reaction(int message_id, int user_id);
+
 #endif /* REACTION_MODEL_H */

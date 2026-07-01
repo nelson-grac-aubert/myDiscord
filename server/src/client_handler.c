@@ -42,6 +42,12 @@ static int client_is_authenticated(ClientInfo *client)
     return client->user_id != -1;
 }
 
+/* Implemented further down next to the other reaction handlers, but also
+   needed by handler_msg_history (defined before them in this file) to
+   include each historical message's existing reactions */
+static int build_reaction_summary_payload(ServerState *s, int message_id,
+                                          char *payload, size_t payload_size);
+
 void client_handler_dispatch(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
     switch (pkt->type) {
@@ -51,6 +57,7 @@ void client_handler_dispatch(const Packet *pkt, ClientInfo *client, ServerState 
         case MSG_SEND: handler_msg_send(pkt, client, s); break;
         case MSG_HISTORY: handler_msg_history(pkt, client, s); break;
         case MSG_REACTION: handler_reaction(pkt, client, s); break;
+        case MSG_REACTION_REMOVE: handler_reaction_remove(pkt, client, s); break;
         case MSG_DELETE: handler_msg_delete(pkt, client, s); break;
         case CHANNEL_LIST: handler_channel_list(pkt, client, s); break;
         case CHANNEL_CREATE: handler_channel_create(pkt, client, s); break;
@@ -246,19 +253,182 @@ void handler_msg_history(const Packet *pkt, ClientInfo *client, ServerState *s)
         Packet push;
         packet_build(&push, SERVER_PUSH, 1, rows[i]);
         send_packet(client, &push);
+
+        /* rows[i] = "channel_id|id_message|HH:MM|username|content" - pull
+           out id_message so this client also learns about any existing
+           reactions on it, instead of only finding out on the next
+           add/remove broadcast */
+        char row_copy[512];
+        strncpy(row_copy, rows[i], sizeof(row_copy) - 1);
+        row_copy[sizeof(row_copy) - 1] = '\0';
+
+        char *first_pipe = strchr(row_copy, '|');
+        char *second_pipe = first_pipe ? strchr(first_pipe + 1, '|') : NULL;
+        if (second_pipe) {
+            *second_pipe = '\0';
+            int message_id = atoi(first_pipe + 1);
+
+            char reaction_payload[PACKET_FIELD_SIZE];
+            int rcount = build_reaction_summary_payload(s, message_id, reaction_payload, sizeof(reaction_payload));
+            if (rcount > 0) {
+                Packet reaction_push;
+                packet_build(&reaction_push, SERVER_PUSH, 1, reaction_payload);
+                send_packet(client, &reaction_push);
+            }
+        }
     }
 
     reply_ok(client, "msg_history: done");
 }
 
+static int is_valid_reaction_emoji(const char *emoji)
+{
+    return strcmp(emoji, "\xE2\x9D\xA4\xEF\xB8\x8F") == 0 || /* heart */
+          strcmp(emoji, "\xF0\x9F\x98\x8A") == 0 ||            /* happy */
+          strcmp(emoji, "\xF0\x9F\x98\xA2") == 0;              /* sad */
+}
+
+/* Builds "REACTIONS:message_id:emoji=uid1,uid2;emoji2=uid3" - a full
+   snapshot of every reaction on one message, which the client replaces its
+   local per-message reaction list with. Returns the raw reaction row
+   count (0 if none), -1 on db error. */
+static int build_reaction_summary_payload(ServerState *s, int message_id,
+                                          char *payload, size_t payload_size)
+{
+    char rows[64][24];
+    int count = db_reaction_list_for_message(s->db, message_id, rows, 64);
+    if (count < 0)
+        return -1;
+
+    char emojis[64][8];
+    char uids[64][16];
+    for (int i = 0; i < count; i++) {
+        char *colon = strchr(rows[i], ':');
+        if (!colon) { uids[i][0] = '\0'; emojis[i][0] = '\0'; continue; }
+        *colon = '\0';
+
+        size_t uid_len = strlen(rows[i]);
+        if (uid_len >= sizeof(uids[i])) uid_len = sizeof(uids[i]) - 1;
+        memcpy(uids[i], rows[i], uid_len);
+        uids[i][uid_len] = '\0';
+
+        size_t emoji_len = strlen(colon + 1);
+        if (emoji_len >= sizeof(emojis[i])) emoji_len = sizeof(emojis[i]) - 1;
+        memcpy(emojis[i], colon + 1, emoji_len);
+        emojis[i][emoji_len] = '\0';
+    }
+
+    int written = snprintf(payload, payload_size, "REACTIONS:%d:", message_id);
+
+    int used[64] = {0};
+    int first_group = 1;
+    for (int i = 0; i < count; i++) {
+        if (used[i] || emojis[i][0] == '\0')
+            continue;
+
+        if (!first_group && written < (int)payload_size - 1)
+            payload[written++] = ';';
+        first_group = 0;
+
+        int w = snprintf(payload + written, payload_size - written, "%s=", emojis[i]);
+        if (w > 0) written += w;
+
+        int first_uid = 1;
+        for (int j = i; j < count; j++) {
+            if (used[j] || strcmp(emojis[j], emojis[i]) != 0)
+                continue;
+            used[j] = 1;
+
+            if (!first_uid && written < (int)payload_size - 1)
+                payload[written++] = ',';
+            first_uid = 0;
+
+            w = snprintf(payload + written, payload_size - written, "%s", uids[j]);
+            if (w > 0) written += w;
+        }
+    }
+    if (written >= (int)payload_size) written = (int)payload_size - 1;
+    payload[written] = '\0';
+
+    return count;
+}
+
+/* Rebuilds and broadcasts the full reaction summary for one message to
+   everyone in its channel, so add/remove from any user is reflected live
+   for everyone. */
+static void broadcast_reaction_summary(ServerState *s, int message_id, int channel_id)
+{
+    char payload[PACKET_FIELD_SIZE];
+    if (build_reaction_summary_payload(s, message_id, payload, sizeof(payload)) < 0)
+        return;
+
+    Packet push;
+    packet_build(&push, SERVER_PUSH, 1, payload);
+    broadcast_to_channel(&s->registry, channel_id, &push);
+}
+
 void handler_reaction(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
-    (void)pkt; (void)s;
     if (!client_is_authenticated(client)) {
         reply_error(client, "reaction: not authenticated");
         return;
     }
-    reply_ok(client, "reaction stub");
+
+    if (pkt->field_count < 2) {
+        reply_error(client, "reaction: missing fields");
+        return;
+    }
+
+    int message_id    = atoi(pkt->fields[0]);
+    const char *emoji = pkt->fields[1];
+
+    if (!is_valid_reaction_emoji(emoji)) {
+        reply_error(client, "reaction: unsupported emoji");
+        return;
+    }
+
+    int channel_id = db_message_get_channel_id(s->db, message_id);
+    if (channel_id == -1) {
+        reply_error(client, "reaction: message not found");
+        return;
+    }
+
+    if (db_reaction_set(s->db, message_id, client->user_id, emoji) != 0) {
+        reply_error(client, "reaction: db error");
+        return;
+    }
+
+    reply_ok(client, "reacted");
+    broadcast_reaction_summary(s, message_id, channel_id);
+}
+
+void handler_reaction_remove(const Packet *pkt, ClientInfo *client, ServerState *s)
+{
+    if (!client_is_authenticated(client)) {
+        reply_error(client, "reaction_remove: not authenticated");
+        return;
+    }
+
+    if (pkt->field_count < 1) {
+        reply_error(client, "reaction_remove: missing message_id");
+        return;
+    }
+
+    int message_id = atoi(pkt->fields[0]);
+
+    int channel_id = db_message_get_channel_id(s->db, message_id);
+    if (channel_id == -1) {
+        reply_error(client, "reaction_remove: message not found");
+        return;
+    }
+
+    if (db_reaction_remove(s->db, message_id, client->user_id) != 0) {
+        reply_error(client, "reaction_remove: no reaction to remove");
+        return;
+    }
+
+    reply_ok(client, "unreacted");
+    broadcast_reaction_summary(s, message_id, channel_id);
 }
 
 void handler_channel_list(const Packet *pkt, ClientInfo *client, ServerState *s)

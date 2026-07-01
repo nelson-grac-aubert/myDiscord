@@ -73,6 +73,20 @@ typedef struct
     int member_row_user_id[MAX_MEMBER_ROWS];
     int member_row_is_banned[MAX_MEMBER_ROWS];
     int member_row_count;
+
+    // Right-click context menu on a chat message (add/remove reaction)
+    int show_reaction_menu;
+    int reaction_menu_message_id;
+    int reaction_menu_is_remove; // 0 = show 3 emoji add-buttons, 1 = show "Remove Reaction"
+    SDL_Rect btn_reaction_rects[3];
+    SDL_Rect btn_reaction_remove_rect;
+
+    // Populated each frame by draw_chat_messages (one visible row per
+    // message) and consumed by chat_controller_handle_right_click, same
+    // rationale as member_row_*
+    SDL_Rect message_row_rect[MAX_MESSAGES];
+    int message_row_id[MAX_MESSAGES];
+    int message_row_count;
 } ChatLayout;
 
 extern SDL_Rect modal_input_rect;

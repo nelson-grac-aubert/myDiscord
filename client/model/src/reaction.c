@@ -47,7 +47,7 @@ void reaction_model_remove(int message_id, int user_id, const char* emoji) {
         if (global_reactions[i].message_id == message_id &&
             global_reactions[i].user_id == user_id &&
             strcmp(global_reactions[i].emoji, emoji) == 0) {
-            
+
             // Shift the remaining array elements to fill the gap
             for (int j = i; j < global_reaction_count - 1; j++) {
                 global_reactions[j] = global_reactions[j + 1];
@@ -56,4 +56,28 @@ void reaction_model_remove(int message_id, int user_id, const char* emoji) {
             return;
         }
     }
+}
+
+void reaction_model_clear_for_message(int message_id) {
+    int i = 0;
+    while (i < global_reaction_count) {
+        if (global_reactions[i].message_id == message_id) {
+            for (int j = i; j < global_reaction_count - 1; j++) {
+                global_reactions[j] = global_reactions[j + 1];
+            }
+            global_reaction_count--;
+        } else {
+            i++;
+        }
+    }
+}
+
+int reaction_model_user_has_reaction(int message_id, int user_id) {
+    for (int i = 0; i < global_reaction_count; i++) {
+        if (global_reactions[i].message_id == message_id &&
+            global_reactions[i].user_id == user_id) {
+            return 1;
+        }
+    }
+    return 0;
 }

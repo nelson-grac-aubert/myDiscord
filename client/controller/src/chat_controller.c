@@ -3,6 +3,7 @@
 #include "channel.h"
 #include "message.h"
 #include "user.h"
+#include "reaction.h"
 #include "ui_call.h"
 #include "ui_channels.h"
 #include "client_socket.h"
@@ -32,6 +33,10 @@ static int  g_pending_create_is_private = 0;
    (e.g. rejects deletion by a non-creator) */
 static int g_pending_delete = 0;
 static int g_pending_delete_id = -1;
+
+/* The only three reactions the UI offers - must match
+   is_valid_reaction_emoji() server-side */
+static const char *REACTION_EMOJIS[3] = { "\xE2\x9D\xA4\xEF\xB8\x8F", "\xF0\x9F\x98\x8A", "\xF0\x9F\x98\xA2" };
 
 extern SDL_Rect modal_bg_rect, modal_input_rect, modal_toggle_rect,
                modal_btn_ok, modal_btn_cancel;
@@ -181,6 +186,56 @@ static void on_server_push(const Packet *pkt)
         return;
     }
 
+    /* Reaction summary push: "REACTIONS:message_id:emoji=uid1,uid2;emoji2=uid3"
+       - a full snapshot of every reaction on that one message, replacing
+       whatever we knew locally for it. Manual strchr-based parsing (not
+       strtok) since it has two nested delimiter levels (';' groups,
+       ',' uids within a group) and nesting two strtok loops on the same
+       buffer would corrupt strtok's shared internal state. */
+    if (strncmp(payload, "REACTIONS:", 10) == 0) {
+        const char *data = payload + 10;
+        char buf[PACKET_FIELD_SIZE];
+        strncpy(buf, data, sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+
+        char *colon = strchr(buf, ':');
+        if (!colon)
+            return;
+        *colon = '\0';
+        int message_id = atoi(buf);
+        char *cursor = colon + 1;
+
+        reaction_model_clear_for_message(message_id);
+
+        while (cursor && *cursor) {
+            char *group_end = strchr(cursor, ';');
+            if (group_end)
+                *group_end = '\0';
+
+            char *eq = strchr(cursor, '=');
+            if (eq) {
+                *eq = '\0';
+                const char *emoji = cursor;
+                char *uid_cursor = eq + 1;
+
+                while (uid_cursor && *uid_cursor) {
+                    char *uid_end = strchr(uid_cursor, ',');
+                    if (uid_end)
+                        *uid_end = '\0';
+
+                    int uid = atoi(uid_cursor);
+                    if (uid > 0)
+                        reaction_model_add(message_id, uid, emoji);
+
+                    uid_cursor = uid_end ? uid_end + 1 : NULL;
+                }
+            }
+
+            cursor = group_end ? group_end + 1 : NULL;
+        }
+        return;
+    }
+
     /* Regular message push: "channel_id|message_id|HH:MM|username|content" */
     char raw[PACKET_FIELD_SIZE];
     strncpy(raw, payload, sizeof(raw) - 1);
@@ -295,6 +350,34 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
             client_socket_send(&g_client_socket, &pkt);
         }
         layout->show_user_context_menu = 0;
+        return 0;
+    }
+
+    /* 0b. Menu contextuel de reaction (ajout ou suppression) - meme logique
+       de fermeture-au-clic que le menu de ban */
+    if (layout->show_reaction_menu) {
+        char id_str[16];
+        snprintf(id_str, sizeof(id_str), "%d", layout->reaction_menu_message_id);
+
+        if (layout->reaction_menu_is_remove) {
+            SDL_Rect *r = &layout->btn_reaction_remove_rect;
+            if (cx >= r->x && cx <= r->x + r->w && cy >= r->y && cy <= r->y + r->h) {
+                Packet pkt;
+                packet_build(&pkt, MSG_REACTION_REMOVE, 1, id_str);
+                client_socket_send(&g_client_socket, &pkt);
+            }
+        } else {
+            for (int i = 0; i < 3; i++) {
+                SDL_Rect *r = &layout->btn_reaction_rects[i];
+                if (cx >= r->x && cx <= r->x + r->w && cy >= r->y && cy <= r->y + r->h) {
+                    Packet pkt;
+                    packet_build(&pkt, MSG_REACTION, 2, id_str, REACTION_EMOJIS[i]);
+                    client_socket_send(&g_client_socket, &pkt);
+                    break;
+                }
+            }
+        }
+        layout->show_reaction_menu = 0;
         return 0;
     }
 
@@ -525,26 +608,45 @@ void chat_controller_handle_mousewheel(ChatLayout *layout, int wheel_y)
 void chat_controller_handle_right_click(ChatLayout *layout, int cx, int cy)
 {
     layout->show_user_context_menu = 0;
+    layout->show_reaction_menu = 0;
 
-    /* Only moderators/admins have any ban permission at all - don't even
-       offer the menu to a plain user (the server would reject it anyway) */
+    /* Ban menu: only moderators/admins have any ban permission at all -
+       don't even offer the menu to a plain user (the server would reject
+       it anyway). member_row_rect/member_row_user_id/member_row_is_banned
+       are populated fresh every frame by users_draw_sidebar (both the
+       online and offline sections), so this hit-test always matches
+       exactly what's on screen. */
     int my_role = auth_controller_get_role_id();
-    if (my_role != ROLE_MODERATOR && my_role != ROLE_ADMIN)
-        return;
-
-    /* member_row_rect/member_row_user_id/member_row_is_banned are populated
-       fresh every frame by users_draw_sidebar (both the online and offline
-       sections), so this hit-test always matches exactly what's on screen */
-    for (int i = 0; i < layout->member_row_count; i++) {
-        SDL_Rect *r = &layout->member_row_rect[i];
-        if (cx >= r->x && cx <= r->x + r->w && cy >= r->y && cy <= r->y + r->h) {
-            if (layout->member_row_user_id[i] != auth_controller_get_user_id()) {
-                layout->show_user_context_menu = 1;
-                layout->context_menu_target_user_id = layout->member_row_user_id[i];
-                layout->context_menu_is_unban = layout->member_row_is_banned[i];
-                layout->context_menu_x = cx;
-                layout->context_menu_y = cy;
+    if (my_role == ROLE_MODERATOR || my_role == ROLE_ADMIN) {
+        for (int i = 0; i < layout->member_row_count; i++) {
+            SDL_Rect *r = &layout->member_row_rect[i];
+            if (cx >= r->x && cx <= r->x + r->w && cy >= r->y && cy <= r->y + r->h) {
+                if (layout->member_row_user_id[i] != auth_controller_get_user_id()) {
+                    layout->show_user_context_menu = 1;
+                    layout->context_menu_target_user_id = layout->member_row_user_id[i];
+                    layout->context_menu_is_unban = layout->member_row_is_banned[i];
+                    layout->context_menu_x = cx;
+                    layout->context_menu_y = cy;
+                }
+                return;
             }
+        }
+    }
+
+    /* Reaction menu: any authenticated user can react to any message.
+       message_row_rect/message_row_id are populated fresh every frame by
+       draw_chat_messages. */
+    for (int i = 0; i < layout->message_row_count; i++) {
+        SDL_Rect *r = &layout->message_row_rect[i];
+        if (cx >= r->x && cx <= r->x + r->w && cy >= r->y && cy <= r->y + r->h) {
+            int message_id = layout->message_row_id[i];
+
+            layout->show_reaction_menu = 1;
+            layout->reaction_menu_message_id = message_id;
+            layout->reaction_menu_is_remove =
+                reaction_model_user_has_reaction(message_id, auth_controller_get_user_id());
+            layout->context_menu_x = cx;
+            layout->context_menu_y = cy;
             return;
         }
     }

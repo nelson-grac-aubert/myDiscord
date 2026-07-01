@@ -65,4 +65,20 @@ int db_user_ban(PGconn *db, int target_id, int banned_by, const char *reason);
    -1 if the user wasn't banned or on db error. */
 int db_user_unban(PGconn *db, int target_id);
 
+/* Returns the id_channel a message belongs to, or -1 if not found/on error */
+int db_message_get_channel_id(PGconn *db, int message_id);
+
+/* Sets user_id's reaction on message_id to emoji, replacing any existing
+   reaction from that same user on that same message (a user can only have
+   one active reaction per message). Returns 0 on success, -1 on error. */
+int db_reaction_set(PGconn *db, int message_id, int user_id, const char *emoji);
+
+/* Removes user_id's reaction from message_id (whatever emoji it was).
+   Returns 0 if a reaction was removed, -1 if none existed/on error. */
+int db_reaction_remove(PGconn *db, int message_id, int user_id);
+
+/* Fills out with "user_id:emoji" for every reaction on message_id.
+   Returns row count, -1 on error. */
+int db_reaction_list_for_message(PGconn *db, int message_id, char out[][24], int max_rows);
+
 #endif /* DB_H */

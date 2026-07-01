@@ -384,3 +384,95 @@ int db_user_unban(PGconn *db, int target_id)
     PQclear(res);
     return ok;
 }
+
+int db_message_get_channel_id(PGconn *db, int message_id)
+{
+    char mid[16];
+    snprintf(mid, sizeof(mid), "%d", message_id);
+
+    const char *params[] = { mid };
+    PGresult *res = PQexecParams(db,
+        "SELECT id_channel FROM message WHERE id_message = $1",
+        1, NULL, params, NULL, NULL, 0);
+
+    if (!exec_has_rows(res)) {
+        PQclear(res);
+        return -1;
+    }
+
+    int channel_id = atoi(PQgetvalue(res, 0, 0));
+    PQclear(res);
+    return channel_id;
+}
+
+int db_reaction_set(PGconn *db, int message_id, int user_id, const char *emoji)
+{
+    char mid[16], uid[16];
+    snprintf(mid, sizeof(mid), "%d", message_id);
+    snprintf(uid, sizeof(uid), "%d", user_id);
+
+    /* A user can only have one active reaction per message: clear any
+       existing one first (regardless of emoji) rather than relying on the
+       table's UNIQUE(id_message, id_user, emoji), which would still allow
+       the same user to hold two different emojis on the same message */
+    const char *del_params[] = { mid, uid };
+    PGresult *del_res = PQexecParams(db,
+        "DELETE FROM reaction WHERE id_message = $1 AND id_user = $2",
+        2, NULL, del_params, NULL, NULL, 0);
+    PQclear(del_res);
+
+    const char *ins_params[] = { emoji, mid, uid };
+    PGresult *res = PQexecParams(db,
+        "INSERT INTO reaction (emoji, id_message, id_user) VALUES ($1, $2, $3)",
+        3, NULL, ins_params, NULL, NULL, 0);
+
+    int ok = PQresultStatus(res) == PGRES_COMMAND_OK ? 0 : -1;
+    if (ok != 0)
+        fprintf(stderr, "[db] reaction_set failed: %s\n", PQerrorMessage(db));
+    PQclear(res);
+    return ok;
+}
+
+int db_reaction_remove(PGconn *db, int message_id, int user_id)
+{
+    char mid[16], uid[16];
+    snprintf(mid, sizeof(mid), "%d", message_id);
+    snprintf(uid, sizeof(uid), "%d", user_id);
+
+    const char *params[] = { mid, uid };
+    PGresult *res = PQexecParams(db,
+        "DELETE FROM reaction WHERE id_message = $1 AND id_user = $2",
+        2, NULL, params, NULL, NULL, 0);
+
+    int ok = (PQresultStatus(res) == PGRES_COMMAND_OK &&
+              atoi(PQcmdTuples(res)) > 0) ? 0 : -1;
+    if (ok != 0)
+        fprintf(stderr, "[db] reaction_remove failed or none existed: %s\n", PQerrorMessage(db));
+    PQclear(res);
+    return ok;
+}
+
+int db_reaction_list_for_message(PGconn *db, int message_id, char out[][24], int max_rows)
+{
+    char mid[16];
+    snprintf(mid, sizeof(mid), "%d", message_id);
+
+    const char *params[] = { mid };
+    PGresult *res = PQexecParams(db,
+        "SELECT id_user, emoji FROM reaction WHERE id_message = $1",
+        1, NULL, params, NULL, NULL, 0);
+
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        fprintf(stderr, "[db] reaction_list_for_message failed: %s\n", PQerrorMessage(db));
+        PQclear(res);
+        return -1;
+    }
+
+    int count = PQntuples(res);
+    if (count > max_rows) count = max_rows;
+    for (int i = 0; i < count; i++)
+        snprintf(out[i], 24, "%s:%s", PQgetvalue(res, i, 0), PQgetvalue(res, i, 1));
+
+    PQclear(res);
+    return count;
+}

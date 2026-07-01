@@ -2,6 +2,7 @@
 #include "variables.h"
 #include "channel.h"
 #include "message.h"
+#include "reaction.h"
 #include "ui_channels.h"
 #include "ui_users.h"
 #include "ui_login.h"
@@ -11,6 +12,10 @@
 #include <SDL2/SDL_image.h>
 
 SDL_Rect modal_bg_rect, modal_input_rect, modal_toggle_rect, modal_btn_ok, modal_btn_cancel;
+
+/* Must match REACTION_EMOJIS in chat_controller.c (used there to build the
+   outgoing MSG_REACTION packet) - duplicated here only for menu rendering */
+static const char *REACTION_MENU_EMOJIS[3] = { "\xE2\x9D\xA4\xEF\xB8\x8F", "\xF0\x9F\x98\x8A", "\xF0\x9F\x98\xA2" };
 
 static void compute_modal_rects(int win_w, int win_h)
 {
@@ -57,6 +62,35 @@ static int is_image_path(const char *text) {
             strcasecmp(text + len - 5, ".jpeg") == 0);
 }
 
+#define MAX_REACTION_GROUPS 3   /* only 3 emojis are ever offered */
+#define REACTION_ROW_HEIGHT 22
+#define REACTION_ROW_GAP 6
+
+/* Groups a message's raw (user_id, emoji) reactions into per-emoji counts
+   (at most 3 groups, since only 3 emojis are ever offered) */
+static int compute_reaction_groups(int message_id, char out_emoji[][8], int out_count[], int max_groups)
+{
+    Reaction reactions[MAX_REACTIONS];
+    int count = reaction_model_get_for_message(message_id, reactions, MAX_REACTIONS);
+
+    int groups = 0;
+    for (int i = 0; i < count; i++) {
+        int found = -1;
+        for (int g = 0; g < groups; g++) {
+            if (strcmp(out_emoji[g], reactions[i].emoji) == 0) { found = g; break; }
+        }
+        if (found >= 0) {
+            out_count[found]++;
+        } else if (groups < max_groups) {
+            strncpy(out_emoji[groups], reactions[i].emoji, 7);
+            out_emoji[groups][7] = '\0';
+            out_count[groups] = 1;
+            groups++;
+        }
+    }
+    return groups;
+}
+
 static void draw_chat_messages(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *font_main, TTF_Font *font_emoji, SDL_Color white)
 {
     Channel *active_ch = channel_model_get_active();
@@ -71,17 +105,29 @@ static void draw_chat_messages(SDL_Renderer *renderer, ChatLayout *layout, TTF_F
     int text_wrap_width = layout->chat_area.w - 40;
 
     static char full_msgs[MAX_MESSAGES][560];
+    static char reaction_group_emoji[MAX_MESSAGES][MAX_REACTION_GROUPS][8];
+    static int  reaction_group_count[MAX_MESSAGES][MAX_REACTION_GROUPS];
+    int reaction_group_num[MAX_MESSAGES];
+    int content_heights[MAX_MESSAGES];
     int item_heights[MAX_MESSAGES];
     int total_height = 0;
     for (int i = 0; i < msg_count; i++) {
         if (is_image_path(active_msgs[i].text)) {
-            item_heights[i] = 120;
+            content_heights[i] = 120;
         } else {
             snprintf(full_msgs[i], sizeof(full_msgs[i]), "%s  %s: %s",
                      active_msgs[i].timestamp, active_msgs[i].username, active_msgs[i].text);
             int h = measure_text_wrapped_height(font_main, full_msgs[i], text_wrap_width);
-            item_heights[i] = (h > MESSAGE_ITEM_HEIGHT ? h : MESSAGE_ITEM_HEIGHT) + 8;
+            content_heights[i] = (h > MESSAGE_ITEM_HEIGHT ? h : MESSAGE_ITEM_HEIGHT) + 8;
         }
+
+        reaction_group_num[i] = compute_reaction_groups(active_msgs[i].id,
+            reaction_group_emoji[i], reaction_group_count[i], MAX_REACTION_GROUPS);
+
+        item_heights[i] = content_heights[i];
+        if (reaction_group_num[i] > 0)
+            item_heights[i] += REACTION_ROW_HEIGHT + REACTION_ROW_GAP;
+
         total_height += item_heights[i];
     }
 
@@ -105,6 +151,7 @@ static void draw_chat_messages(SDL_Renderer *renderer, ChatLayout *layout, TTF_F
     SDL_GetMouseState(&mx, &my);
 
     layout->hover_message_delete_index = -1;
+    layout->message_row_count = 0;
 
     // SÉCURITÉ : Activer le Blend Mode pour gérer la transparence des survols
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
@@ -131,6 +178,12 @@ static void draw_chat_messages(SDL_Renderer *renderer, ChatLayout *layout, TTF_F
                           my >= row_rect.y && my <= row_rect.y + row_rect.h &&
                           my >= viewport_top && my <= viewport_bottom);
 
+        if (layout->message_row_count < MAX_MESSAGES) {
+            layout->message_row_rect[layout->message_row_count] = row_rect;
+            layout->message_row_id[layout->message_row_count] = active_msgs[i].id;
+            layout->message_row_count++;
+        }
+
         if (is_hovered && !layout->show_create_modal)
         {
             SDL_SetRenderDrawColor(renderer, VAR_COLOR_HOVER_ITEM.r, VAR_COLOR_HOVER_ITEM.g, VAR_COLOR_HOVER_ITEM.b, VAR_COLOR_HOVER_ITEM.a);
@@ -146,12 +199,12 @@ static void draw_chat_messages(SDL_Renderer *renderer, ChatLayout *layout, TTF_F
             snprintf(user_header, sizeof(user_header), "%s  %s: ",
                      active_msgs[i].timestamp, active_msgs[i].username);
             draw_text(renderer, font_main, user_header, layout->chat_area.x + 20, start_y, white);
-            
+
             SDL_Texture *img_tex = NULL;
             SDL_RWops *rw = SDL_RWFromFile(active_msgs[i].text, "rb");
             if (rw)
             {
-                img_tex = IMG_LoadTexture_RW(renderer, rw, 1); 
+                img_tex = IMG_LoadTexture_RW(renderer, rw, 1);
             }
 
             if (img_tex)
@@ -163,12 +216,42 @@ static void draw_chat_messages(SDL_Renderer *renderer, ChatLayout *layout, TTF_F
             else
             {
                 draw_text(renderer, font_main, "<Image introuvable ou corrompue>", layout->chat_area.x + 30, start_y + 22, (SDL_Color){200, 50, 50, 255});
-            }            
+            }
         }
         else
         {
             draw_text_wrapped(renderer, font_main, full_msgs[i],
                               layout->chat_area.x + 20, start_y, white, text_wrap_width);
+        }
+
+        if (reaction_group_num[i] > 0)
+        {
+            int bubble_x = layout->chat_area.x + 20;
+            int bubble_y = start_y + content_heights[i] + 2;
+
+            for (int g = 0; g < reaction_group_num[i]; g++)
+            {
+                char count_str[8];
+                snprintf(count_str, sizeof(count_str), " %d", reaction_group_count[i][g]);
+
+                int emoji_w = 0, emoji_h = 0;
+                if (font_emoji)
+                    TTF_SizeUTF8(font_emoji, reaction_group_emoji[i][g], &emoji_w, &emoji_h);
+                int count_w = 0, count_h = 0;
+                TTF_SizeUTF8(font_main, count_str, &count_w, &count_h);
+
+                int bubble_w = emoji_w + count_w + 16;
+                SDL_Rect bubble_rect = {bubble_x, bubble_y, bubble_w, REACTION_ROW_HEIGHT};
+
+                SDL_SetRenderDrawColor(renderer, 0x3A, 0x3C, 0x42, 0xFF);
+                SDL_RenderFillRect(renderer, &bubble_rect);
+
+                if (font_emoji)
+                    draw_text(renderer, font_emoji, reaction_group_emoji[i][g], bubble_x + 6, bubble_y + 1, white);
+                draw_text(renderer, font_main, count_str, bubble_x + 6 + emoji_w, bubble_y + 3, white);
+
+                bubble_x += bubble_w + 6;
+            }
         }
 
         if (is_hovered && !layout->show_create_modal && font_emoji)
@@ -533,6 +616,41 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
             SDL_Color ban_color = {0xF0, 0x47, 0x47, 0xFF};
             draw_text(renderer, font_main, "Ban User", layout->btn_ban_user_rect.x + 14,
                      layout->btn_ban_user_rect.y + 8, ban_color);
+        }
+    }
+
+    // 8. Menu contextuel de reaction sur un message (ajouter / retirer)
+    if (layout->show_reaction_menu)
+    {
+        if (layout->reaction_menu_is_remove)
+        {
+            layout->btn_reaction_remove_rect = (SDL_Rect){layout->context_menu_x, layout->context_menu_y, 160, 32};
+
+            SDL_SetRenderDrawColor(renderer, 0x2B, 0x2D, 0x31, 0xFF);
+            SDL_RenderFillRect(renderer, &layout->btn_reaction_remove_rect);
+            SDL_SetRenderDrawColor(renderer, 0x3F, 0x41, 0x47, 0xFF);
+            SDL_RenderDrawRect(renderer, &layout->btn_reaction_remove_rect);
+
+            SDL_Color remove_color = {0xF0, 0x47, 0x47, 0xFF};
+            draw_text(renderer, font_main, "Remove Reaction", layout->btn_reaction_remove_rect.x + 12,
+                     layout->btn_reaction_remove_rect.y + 8, remove_color);
+        }
+        else
+        {
+            int btn_w = 44, btn_h = 36, gap = 4;
+            for (int i = 0; i < 3; i++)
+            {
+                SDL_Rect r = {layout->context_menu_x + i * (btn_w + gap), layout->context_menu_y, btn_w, btn_h};
+                layout->btn_reaction_rects[i] = r;
+
+                SDL_SetRenderDrawColor(renderer, 0x2B, 0x2D, 0x31, 0xFF);
+                SDL_RenderFillRect(renderer, &r);
+                SDL_SetRenderDrawColor(renderer, 0x3F, 0x41, 0x47, 0xFF);
+                SDL_RenderDrawRect(renderer, &r);
+
+                if (font_emoji)
+                    draw_text(renderer, font_emoji, REACTION_MENU_EMOJIS[i], r.x + 10, r.y + 6, color_white);
+            }
         }
     }
 }
