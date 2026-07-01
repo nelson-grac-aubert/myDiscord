@@ -18,6 +18,19 @@
 static SDL_Renderer *current_renderer = NULL;
 static int g_first_channel_joined = 0;
 
+/* Tracks a CHANNEL_CREATE request awaiting its SERVER_OK reply, so the
+   channel can be added locally with the server-assigned id instead of a
+   client-guessed one */
+static int  g_pending_create = 0;
+static char g_pending_create_name[MAX_NAME_LENGTH];
+static int  g_pending_create_is_private = 0;
+
+/* Tracks a CHANNEL_DELETE request awaiting its SERVER_OK reply, so the
+   channel is only removed locally once the server actually deleted it
+   (e.g. rejects deletion by a non-creator) */
+static int g_pending_delete = 0;
+static int g_pending_delete_id = -1;
+
 extern SDL_Rect modal_bg_rect, modal_input_rect, modal_toggle_rect,
                modal_btn_ok, modal_btn_cancel;
 
@@ -41,7 +54,35 @@ static void request_channel_join_and_history(int channel_id)
 
 static void on_server_push(const Packet *pkt)
 {
-    /* Ignore server acknowledgments */
+    /* A pending CHANNEL_CREATE is acked/rejected by the next SERVER_OK/ERROR */
+    if (g_pending_create) {
+        if (pkt->type == SERVER_OK) {
+            int id = pkt->field_count > 0 ? atoi(pkt->fields[0]) : -1;
+            if (id > 0)
+                channel_model_add(id, g_pending_create_name, g_pending_create_is_private);
+            g_pending_create = 0;
+            return;
+        } else if (pkt->type == SERVER_ERROR) {
+            g_pending_create = 0;
+            return;
+        }
+    }
+
+    /* A pending CHANNEL_DELETE is acked/rejected by the next SERVER_OK/ERROR;
+       only remove the channel locally once the server confirms it (a
+       non-creator's delete request is rejected server-side) */
+    if (g_pending_delete) {
+        if (pkt->type == SERVER_OK) {
+            channel_model_delete_by_id(g_pending_delete_id);
+            g_pending_delete = 0;
+            return;
+        } else if (pkt->type == SERVER_ERROR) {
+            g_pending_delete = 0;
+            return;
+        }
+    }
+
+    /* Ignore other server acknowledgments */
     if (pkt->type == SERVER_OK || pkt->type == SERVER_ERROR)
         return;
 
@@ -51,8 +92,8 @@ static void on_server_push(const Packet *pkt)
     const char *payload = pkt->fields[0];
 
     /* CHANNEL_LIST push: "CHAN:id|name|is_private" */
-    if (strncmp(payload, "CHAN:", 4) == 0) {
-        const char *data = payload + 4;
+    if (strncmp(payload, "CHAN:", 5) == 0) {
+        const char *data = payload + 5;
         char buf[100];
         strncpy(buf, data, sizeof(buf) - 1);
         buf[sizeof(buf) - 1] = '\0';
@@ -82,21 +123,31 @@ static void on_server_push(const Packet *pkt)
         return;
     }
 
-    /* Regular message push: "username|content" */
+    /* Regular message push: "channel_id|message_id|username|content" */
     char raw[PACKET_FIELD_SIZE];
     strncpy(raw, payload, sizeof(raw) - 1);
     raw[sizeof(raw) - 1] = '\0';
 
-    Channel *active = channel_model_get_active();
-    if (!active)
+    char *sep1 = strchr(raw, '|');
+    if (!sep1)
         return;
+    *sep1 = '\0';
+    int channel_id = atoi(raw);
+    char *rest = sep1 + 1;
 
-    char *sep = strchr(raw, '|');
-    if (sep) {
-        *sep = '\0';
-        message_model_add(0, active->id, raw, sep + 1);
+    char *sep2 = strchr(rest, '|');
+    if (!sep2)
+        return;
+    *sep2 = '\0';
+    int message_id = atoi(rest);
+    rest = sep2 + 1;
+
+    char *sep3 = strchr(rest, '|');
+    if (sep3) {
+        *sep3 = '\0';
+        message_model_add(message_id, channel_id, rest, sep3 + 1);
     } else {
-        message_model_add(0, active->id, "unknown", raw);
+        message_model_add(message_id, channel_id, "unknown", rest);
     }
 }
 
@@ -143,6 +194,8 @@ void chat_controller_init(ChatLayout *layout, SDL_Renderer *renderer)
     layout->show_context_menu = 0;
     g_is_mic_muted = 0;
     g_first_channel_joined = 0;
+    g_pending_create = 0;
+    g_pending_delete = 0;
 
     auth_controller_set_chat_callback(on_server_push);
 
@@ -181,8 +234,11 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
                 packet_build(&pkt, CHANNEL_CREATE, 2, layout->modal_buffer, priv_str);
                 client_socket_send(&g_client_socket, &pkt);
 
-                int next_id = channel_model_get_count() + 1;
-                channel_model_add(next_id, layout->modal_buffer, layout->modal_is_private);
+                strncpy(g_pending_create_name, layout->modal_buffer, MAX_NAME_LENGTH - 1);
+                g_pending_create_name[MAX_NAME_LENGTH - 1] = '\0';
+                g_pending_create_is_private = layout->modal_is_private;
+                g_pending_create = 1;
+
                 layout->show_create_modal = 0;
                 layout->modal_buffer[0] = '\0';
             }
@@ -240,7 +296,18 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
         cx <= layout->btn_delete_channel_rect.x + layout->btn_delete_channel_rect.w &&
         cy >= layout->btn_delete_channel_rect.y &&
         cy <= layout->btn_delete_channel_rect.y + layout->btn_delete_channel_rect.h) {
-        channel_model_delete_by_index(layout->hover_channel_delete_index);
+        Channel *target = channel_model_get_by_index(layout->hover_channel_delete_index);
+        if (target) {
+            char id_str[16];
+            snprintf(id_str, sizeof(id_str), "%d", target->id);
+
+            Packet pkt;
+            packet_build(&pkt, CHANNEL_DELETE, 1, id_str);
+            client_socket_send(&g_client_socket, &pkt);
+
+            g_pending_delete_id = target->id;
+            g_pending_delete = 1;
+        }
         layout->hover_channel_delete_index = -1;
         return 0;
     }
@@ -300,8 +367,11 @@ void chat_controller_handle_keydown(ChatLayout *layout, SDL_Keycode sym)
                 packet_build(&pkt, CHANNEL_CREATE, 2, layout->modal_buffer, priv_str);
                 client_socket_send(&g_client_socket, &pkt);
 
-                channel_model_add(channel_model_get_count() + 1,
-                                  layout->modal_buffer, layout->modal_is_private);
+                strncpy(g_pending_create_name, layout->modal_buffer, MAX_NAME_LENGTH - 1);
+                g_pending_create_name[MAX_NAME_LENGTH - 1] = '\0';
+                g_pending_create_is_private = layout->modal_is_private;
+                g_pending_create = 1;
+
                 layout->show_create_modal = 0;
                 layout->modal_buffer[0] = '\0';
             }

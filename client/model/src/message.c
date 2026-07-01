@@ -22,6 +22,17 @@ int message_model_get_for_channel(int channel_id, Message* out_messages, int max
 }
 
 void message_model_add(int id, int channel_id, const char* username, const char* text) {
+    /* Real server-assigned ids (id > 0) can re-arrive via a later MSG_HISTORY
+       fetch (e.g. re-joining a channel already viewed this session); skip
+       re-adding a message we already have. Locally-originated placeholder
+       entries (id == 0, e.g. file transfers) are never deduped this way. */
+    if (id > 0) {
+        for (int i = 0; i < global_message_count; i++) {
+            if (global_messages[i].id == id)
+                return;
+        }
+    }
+
     if (global_message_count >= MAX_MESSAGES) {
         for (int i = 0; i < MAX_MESSAGES - 1; i++) {
             global_messages[i] = global_messages[i + 1];

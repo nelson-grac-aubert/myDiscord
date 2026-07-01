@@ -122,26 +122,57 @@ typedef struct {
     ServerState *server;
 } ThreadArgs;
 
+/* Reassembly buffer size : must hold several queued packets, since a burst
+   of back-to-back sends (e.g. CHANNEL_JOIN immediately followed by
+   MSG_HISTORY) can be coalesced into one recv() */
+#define RECV_ACCUM_SIZE (PACKET_MAX_SIZE * 16)
+
+/* TCP has no message boundaries, so a single recv() call can return zero,
+   one, or several whole/partial packets - each recv() must NOT be assumed
+   to correspond to exactly one packet. */
 static void handle_client_packets(ClientInfo *client, ServerState *s)
 {
-    char buffer[PACKET_MAX_SIZE];
+    char accum[RECV_ACCUM_SIZE];
+    int  accum_len = 0;
+    char recv_buf[PACKET_MAX_SIZE];
 
     while (1) {
-        memset(buffer, 0, sizeof(buffer));
-        int bytes = recv(client->sock, buffer, sizeof(buffer) - 1, 0);
+        int bytes = recv(client->sock, recv_buf, sizeof(recv_buf) - 1, 0);
 
         if (bytes <= 0) {
             printf("[server] client #%d disconnected\n", client->id);
             break;
         }
 
-        Packet pkt;
-        if (packet_deserialize(buffer, &pkt) != 0) {
-            fprintf(stderr, "[server] malformed packet from #%d\n", client->id);
+        if (accum_len + bytes >= (int)sizeof(accum)) {
+            fprintf(stderr, "[server] reassembly buffer overflow from #%d, dropping backlog\n", client->id);
+            accum_len = 0;
             continue;
         }
 
-        client_handler_dispatch(&pkt, client, s);
+        memcpy(accum + accum_len, recv_buf, bytes);
+        accum_len += bytes;
+        accum[accum_len] = '\0';
+
+        /* Process every complete '\n'-terminated packet currently buffered */
+        char *line_start = accum;
+        char *nl;
+        while ((nl = memchr(line_start, '\n', (accum + accum_len) - line_start)) != NULL) {
+            *nl = '\0';
+
+            Packet pkt;
+            if (packet_deserialize(line_start, &pkt) != 0)
+                fprintf(stderr, "[server] malformed packet from #%d\n", client->id);
+            else
+                client_handler_dispatch(&pkt, client, s);
+
+            line_start = nl + 1;
+        }
+
+        /* Keep any trailing partial packet buffered for the next recv() */
+        int leftover = (accum + accum_len) - line_start;
+        memmove(accum, line_start, leftover);
+        accum_len = leftover;
     }
 }
 
@@ -173,6 +204,7 @@ static ClientInfo *make_client(SOCKET sock, struct sockaddr_in *addr, int id)
     client->id = id;
     client->user_id = -1;
     client->channel_id = -1;
+    client->email[0] = '\0';
     strncpy(client->ip, inet_ntoa(addr->sin_addr), sizeof(client->ip) - 1);
     client->ip[sizeof(client->ip) - 1] = '\0';
     return client;

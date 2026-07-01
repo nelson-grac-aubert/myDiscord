@@ -61,3 +61,12 @@ void channel_model_delete_by_index(int index) {
         local_active_channel_index = local_channel_count - 1;
     }
 }
+
+void channel_model_delete_by_id(int id) {
+    for (int i = 0; i < local_channel_count; i++) {
+        if (local_channels[i].id == id) {
+            channel_model_delete_by_index(i);
+            return;
+        }
+    }
+}

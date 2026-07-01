@@ -73,6 +73,8 @@ void handler_register(const Packet *pkt, ClientInfo *client, ServerState *s)
     }
 
     client->user_id = user_id;
+    strncpy(client->email, email, sizeof(client->email) - 1);
+    client->email[sizeof(client->email) - 1] = '\0';
     printf("[handler] REGISTER ok: client #%d is now user %d\n", client->id, user_id);
 
     char resp[32];
@@ -102,6 +104,8 @@ void handler_login(const Packet *pkt, ClientInfo *client, ServerState *s)
     }
 
     client->user_id = user_id;
+    strncpy(client->email, email, sizeof(client->email) - 1);
+    client->email[sizeof(client->email) - 1] = '\0';
     printf("[handler] LOGIN ok: client #%d is now user %d\n", client->id, user_id);
 
     char resp[32];
@@ -139,15 +143,19 @@ void handler_msg_send(const Packet *pkt, ClientInfo *client, ServerState *s)
        fields[1] = content */
     const char *content = pkt->fields[1];
 
-    int ok = db_message_insert(s->db, client->user_id, client->channel_id, content);
-    if (ok != 0) {
+    int message_id = db_message_insert(s->db, client->user_id, client->channel_id, content);
+    if (message_id == -1) {
         reply_error(client, "msg_send: db error");
         return;
     }
 
-    /* Broadcast "email|content" so receiver can display username */
+    /* Broadcast "channel_id|message_id|sender_email|content" so receivers can
+       route the message to the right channel, show who actually sent it
+       (including to the sender's own client), and dedupe it against the
+       same message re-arriving via a later MSG_HISTORY fetch */
     char push_payload[PACKET_FIELD_SIZE];
-    snprintf(push_payload, PACKET_FIELD_SIZE, "Me|%.507s", content);
+    snprintf(push_payload, PACKET_FIELD_SIZE, "%d|%d|%s|%.330s",
+             client->channel_id, message_id, client->email, content);
 
     Packet push;
     packet_build(&push, SERVER_PUSH, 1, push_payload);

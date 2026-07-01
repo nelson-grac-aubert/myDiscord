@@ -34,16 +34,25 @@ static SOCKET connect_to_server(const char *ip, int port)
     return sock;
 }
 
-/* Listener thread : blocks on recv(), parses packets, calls the callback */
+/* Reassembly buffer size : must hold several queued packets, since a burst
+   of back-to-back sends (e.g. MSG_HISTORY) can be coalesced into one recv() */
+#define RECV_ACCUM_SIZE (PACKET_MAX_SIZE * 16)
+
+/* Listener thread : blocks on recv(), reassembles the TCP byte stream into
+   newline-delimited packets, and calls the callback for each complete one.
+   TCP has no message boundaries, so a single recv() call can return zero,
+   one, or several whole/partial packets - each recv() must NOT be assumed
+   to correspond to exactly one packet. */
 static DWORD WINAPI listener_thread(LPVOID arg)
 {
     ClientSocket *cs = (ClientSocket *)arg;
-    char          buffer[PACKET_MAX_SIZE];
+    char          accum[RECV_ACCUM_SIZE];
+    int           accum_len = 0;
+    char          recv_buf[PACKET_MAX_SIZE];
     int           bytes;
 
     while (cs->running) {
-        memset(buffer, 0, sizeof(buffer));
-        bytes = recv(cs->sock, buffer, sizeof(buffer) - 1, 0);
+        bytes = recv(cs->sock, recv_buf, sizeof(recv_buf) - 1, 0);
 
         if (bytes <= 0) {
             /* Server closed connection or error */
@@ -52,16 +61,35 @@ static DWORD WINAPI listener_thread(LPVOID arg)
             break;
         }
 
-        /* Parse the raw string into a Packet */
-        Packet pkt;
-        if (packet_deserialize(buffer, &pkt) != 0) {
-            fprintf(stderr, "[socket] malformed packet: %s\n", buffer);
+        if (accum_len + bytes >= (int)sizeof(accum)) {
+            fprintf(stderr, "[socket] reassembly buffer overflow, dropping backlog\n");
+            accum_len = 0;
             continue;
         }
 
-        /* Forward to the callback if one was registered */
-        if (cs->on_packet != NULL)
-            cs->on_packet(&pkt);
+        memcpy(accum + accum_len, recv_buf, bytes);
+        accum_len += bytes;
+        accum[accum_len] = '\0';
+
+        /* Process every complete '\n'-terminated packet currently buffered */
+        char *line_start = accum;
+        char *nl;
+        while ((nl = memchr(line_start, '\n', (accum + accum_len) - line_start)) != NULL) {
+            *nl = '\0';
+
+            Packet pkt;
+            if (packet_deserialize(line_start, &pkt) != 0)
+                fprintf(stderr, "[socket] malformed packet: %s\n", line_start);
+            else if (cs->on_packet != NULL)
+                cs->on_packet(&pkt);
+
+            line_start = nl + 1;
+        }
+
+        /* Keep any trailing partial packet buffered for the next recv() */
+        int leftover = (accum + accum_len) - line_start;
+        memmove(accum, line_start, leftover);
+        accum_len = leftover;
     }
 
     return 0;

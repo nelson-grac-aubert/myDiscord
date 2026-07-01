@@ -25,5 +25,6 @@ Channel* channel_model_get_by_index(int index);
 // Manipulation actions
 int channel_model_add(int id, const char* name, int is_private);
 void channel_model_delete_by_index(int index);
+void channel_model_delete_by_id(int id);
 
 #endif /* CHANNEL_MODEL_H */

@@ -103,14 +103,18 @@ int db_message_insert(PGconn *db, int user_id, int channel_id, const char *conte
     const char *params[] = { content, "iv_placeholder", uid, cid };
     PGresult *res = PQexecParams(db,
         "INSERT INTO message (encrypted_content, content_iv, id_author, id_channel) "
-        "VALUES ($1, $2, $3, $4)",
+        "VALUES ($1, $2, $3, $4) RETURNING id_message",
         4, NULL, params, NULL, NULL, 0);
 
-    int ok = PQresultStatus(res) == PGRES_COMMAND_OK ? 0 : -1;
-    if (ok != 0)
+    if (!exec_has_rows(res)) {
         fprintf(stderr, "[db] message_insert failed: %s\n", PQerrorMessage(db));
+        PQclear(res);
+        return -1;
+    }
+
+    int id = atoi(PQgetvalue(res, 0, 0));
     PQclear(res);
-    return ok;
+    return id;
 }
 
 int db_message_history(PGconn *db, int channel_id, int limit,
@@ -122,7 +126,7 @@ int db_message_history(PGconn *db, int channel_id, int limit,
 
     const char *params[] = { cid, lim };
     PGresult *res = PQexecParams(db,
-        "SELECT u.email, m.encrypted_content FROM message m "
+        "SELECT u.email, m.encrypted_content, m.id_message FROM message m "
         "JOIN \"user\" u ON u.id_user = m.id_author "
         "WHERE m.id_channel = $1 ORDER BY m.sent_at DESC LIMIT $2",
         2, NULL, params, NULL, NULL, 0);
@@ -135,7 +139,8 @@ int db_message_history(PGconn *db, int channel_id, int limit,
 
     int count = PQntuples(res);
     for (int i = 0; i < count; i++)
-        snprintf(messages_out[i], 512, "%s|%s", PQgetvalue(res, i, 0), PQgetvalue(res, i, 1));
+        snprintf(messages_out[i], 512, "%d|%s|%s|%s", channel_id,
+                 PQgetvalue(res, i, 2), PQgetvalue(res, i, 0), PQgetvalue(res, i, 1));
 
     PQclear(res);
     return count;
@@ -176,9 +181,13 @@ int db_channel_delete(PGconn *db, int channel_id, int requester_id)
         "DELETE FROM channel WHERE id_channel = $1 AND id_creator = $2",
         2, NULL, params, NULL, NULL, 0);
 
-    int ok = PQresultStatus(res) == PGRES_COMMAND_OK ? 0 : -1;
+    /* A DELETE with a non-matching WHERE still reports PGRES_COMMAND_OK with
+       0 rows affected, so a bad channel_id or a non-creator request must be
+       distinguished by the affected row count, not just the result status */
+    int ok = (PQresultStatus(res) == PGRES_COMMAND_OK &&
+              atoi(PQcmdTuples(res)) > 0) ? 0 : -1;
     if (ok != 0)
-        fprintf(stderr, "[db] channel_delete failed: %s\n", PQerrorMessage(db));
+        fprintf(stderr, "[db] channel_delete failed or forbidden: %s\n", PQerrorMessage(db));
     PQclear(res);
     return ok;
 }

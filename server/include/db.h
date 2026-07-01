@@ -14,12 +14,12 @@ int db_user_login(PGconn *db, const char *email, const char *password);
 /* Returns 1 if user is banned, 0 if not, -1 on error */
 int db_user_is_banned(PGconn *db, int user_id);
 
-/* Returns number of rows written, -1 on error */
+/* Returns the new id_message on success, -1 on error */
 int db_message_insert(PGconn *db, int user_id, int channel_id,
                       const char *content);
 
 /* Fills messages_out with last limit messages in channel.
-   Each row: "username|content\0". Returns row count, -1 on error. */
+   Each row: "id_message|username|content\0". Returns row count, -1 on error. */
 int db_message_history(PGconn *db, int channel_id, int limit,
                        char messages_out[][512], int max_rows);
 
