@@ -139,11 +139,11 @@ static void on_server_push(const Packet *pkt)
         return;
     }
 
-    /* Live account roster push: "USERS:id1:username1:online1;..." - a full
-       snapshot of every registered account (online or not), so it always
-       replaces whatever roster we had rather than appending to it. The
-       real user_id is carried so a moderator/admin can target a ban,
-       including someone who's currently offline. */
+    /* Live account roster push: "USERS:id1:username1:online1:banned1;..." -
+       a full snapshot of every registered account (online or not, banned
+       or not), so it always replaces whatever roster we had rather than
+       appending to it. The real user_id is carried so a moderator/admin
+       can target a ban/unban, including someone who's currently offline. */
     if (strncmp(payload, "USERS:", 6) == 0) {
         const char *data = payload + 6;
         char buf[PACKET_FIELD_SIZE];
@@ -156,14 +156,17 @@ static void on_server_push(const Packet *pkt)
         while (tok != NULL) {
             char *c1 = strchr(tok, ':');
             char *c2 = c1 ? strchr(c1 + 1, ':') : NULL;
-            if (c1 && c2) {
+            char *c3 = c2 ? strchr(c2 + 1, ':') : NULL;
+            if (c1 && c2 && c3) {
                 *c1 = '\0';
                 *c2 = '\0';
+                *c3 = '\0';
                 int uid = atoi(tok);
                 const char *uname = c1 + 1;
                 int is_online = atoi(c2 + 1);
+                int is_banned = atoi(c3 + 1);
                 if (uid > 0 && strlen(uname) > 0)
-                    user_model_add(uid, uname, is_online);
+                    user_model_add(uid, uname, is_online, is_banned);
             }
             tok = strtok(NULL, ";");
         }
@@ -275,8 +278,9 @@ void chat_controller_update_hover(ChatLayout *layout, int mx, int my)
 
 int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
 {
-    /* 0. Menu contextuel "Ban User" - tout clic pendant qu'il est ouvert le
-       referme ; seul un clic exact sur le bouton envoie le ban */
+    /* 0. Menu contextuel "Ban User"/"Unban User" - tout clic pendant qu'il
+       est ouvert le referme ; seul un clic exact sur le bouton envoie
+       la requete */
     if (layout->show_user_context_menu) {
         if (cx >= layout->btn_ban_user_rect.x && cx <= layout->btn_ban_user_rect.x + layout->btn_ban_user_rect.w &&
             cy >= layout->btn_ban_user_rect.y && cy <= layout->btn_ban_user_rect.y + layout->btn_ban_user_rect.h) {
@@ -284,7 +288,10 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
             snprintf(id_str, sizeof(id_str), "%d", layout->context_menu_target_user_id);
 
             Packet pkt;
-            packet_build(&pkt, USER_BAN, 2, id_str, "banned via UI");
+            if (layout->context_menu_is_unban)
+                packet_build(&pkt, USER_UNBAN, 1, id_str);
+            else
+                packet_build(&pkt, USER_BAN, 2, id_str, "banned via UI");
             client_socket_send(&g_client_socket, &pkt);
         }
         layout->show_user_context_menu = 0;
@@ -525,15 +532,16 @@ void chat_controller_handle_right_click(ChatLayout *layout, int cx, int cy)
     if (my_role != ROLE_MODERATOR && my_role != ROLE_ADMIN)
         return;
 
-    /* member_row_rect/member_row_user_id are populated fresh every frame by
-       users_draw_sidebar (both the online and offline sections), so this
-       hit-test always matches exactly what's on screen */
+    /* member_row_rect/member_row_user_id/member_row_is_banned are populated
+       fresh every frame by users_draw_sidebar (both the online and offline
+       sections), so this hit-test always matches exactly what's on screen */
     for (int i = 0; i < layout->member_row_count; i++) {
         SDL_Rect *r = &layout->member_row_rect[i];
         if (cx >= r->x && cx <= r->x + r->w && cy >= r->y && cy <= r->y + r->h) {
             if (layout->member_row_user_id[i] != auth_controller_get_user_id()) {
                 layout->show_user_context_menu = 1;
                 layout->context_menu_target_user_id = layout->member_row_user_id[i];
+                layout->context_menu_is_unban = layout->member_row_is_banned[i];
                 layout->context_menu_x = cx;
                 layout->context_menu_y = cy;
             }

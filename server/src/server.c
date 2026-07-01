@@ -120,12 +120,13 @@ void broadcast_to_channel(ClientRegistry *reg, int channel_id, const Packet *pkt
 
 /* Sends every currently-connected, authenticated client the full account
    roster - every registered user, online or not - as one
-   "USERS:id1:username1:online1;id2:username2:online2;..." push, so
-   receivers just replace their local list rather than reconciling a diff.
-   The real user_id is included (not just the display name) so a client can
-   target a USER_BAN at a specific person, including someone offline.
-   Called on login/register/disconnect so every client's member sidebar
-   stays live, independent of which channel anyone is viewing. */
+   "USERS:id1:username1:online1:banned1;id2:username2:online2:banned2;..."
+   push, so receivers just replace their local list rather than
+   reconciling a diff. The real user_id is included (not just the display
+   name) so a client can target a USER_BAN/USER_UNBAN at a specific person,
+   including someone offline. Called on login/register/ban/unban/disconnect
+   so every client's member sidebar stays live, independent of which
+   channel anyone is viewing. */
 #define MAX_ROSTER_USERS 200
 
 void broadcast_user_list(ServerState *s)
@@ -141,12 +142,15 @@ void broadcast_user_list(ServerState *s)
     WaitForSingleObject(s->registry.mutex, INFINITE);
 
     for (int i = 0; i < all_count; i++) {
-        char *colon = strchr(all_rows[i], ':');
-        if (!colon)
+        char *c1 = strchr(all_rows[i], ':');
+        char *c2 = c1 ? strchr(c1 + 1, ':') : NULL;
+        if (!c1 || !c2)
             continue;
-        *colon = '\0';
+        *c1 = '\0';
+        *c2 = '\0';
         int uid = atoi(all_rows[i]);
-        const char *uname = colon + 1;
+        const char *uname = c1 + 1;
+        int is_banned = atoi(c2 + 1);
 
         int is_online = 0;
         for (int j = 0; j < MAX_CLIENTS; j++) {
@@ -154,8 +158,8 @@ void broadcast_user_list(ServerState *s)
             if (c != NULL && c->user_id == uid) { is_online = 1; break; }
         }
 
-        char entry[190];
-        int entry_len = snprintf(entry, sizeof(entry), "%d:%s:%d", uid, uname, is_online);
+        char entry[200];
+        int entry_len = snprintf(entry, sizeof(entry), "%d:%s:%d:%d", uid, uname, is_online, is_banned);
         if (entry_len < 0 || len + (size_t)entry_len + 2 >= sizeof(payload))
             break;
         if (len > strlen("USERS:"))

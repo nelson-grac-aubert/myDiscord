@@ -25,7 +25,8 @@ void handler_channel_join  (const Packet *pkt, ClientInfo *client, ServerState *
 void handler_channel_leave (const Packet *pkt, ClientInfo *client, ServerState *s);
 
 /* Users */
-void handler_user_list(const Packet *pkt, ClientInfo *client, ServerState *s);
-void handler_user_ban (const Packet *pkt, ClientInfo *client, ServerState *s);
+void handler_user_list  (const Packet *pkt, ClientInfo *client, ServerState *s);
+void handler_user_ban   (const Packet *pkt, ClientInfo *client, ServerState *s);
+void handler_user_unban (const Packet *pkt, ClientInfo *client, ServerState *s);
 
 #endif /* CLIENT_HANDLER_H */

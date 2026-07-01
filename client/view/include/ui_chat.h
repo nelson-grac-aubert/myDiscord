@@ -62,6 +62,7 @@ typedef struct
     // Right-click context menu on a member of the online-users panel
     int show_user_context_menu;
     int context_menu_target_user_id;
+    int context_menu_is_unban; // 0 = show "Ban User", 1 = show "Unban User"
     SDL_Rect btn_ban_user_rect;
 
     // Populated each frame by users_draw_sidebar (one entry per rendered
@@ -70,6 +71,7 @@ typedef struct
     // exactly what was drawn instead of duplicating the layout math
     SDL_Rect member_row_rect[MAX_MEMBER_ROWS];
     int member_row_user_id[MAX_MEMBER_ROWS];
+    int member_row_is_banned[MAX_MEMBER_ROWS];
     int member_row_count;
 } ChatLayout;
 

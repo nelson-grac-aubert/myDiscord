@@ -59,6 +59,7 @@ void client_handler_dispatch(const Packet *pkt, ClientInfo *client, ServerState 
         case CHANNEL_LEAVE: handler_channel_leave(pkt, client, s); break;
         case USER_LIST: handler_user_list(pkt, client, s); break;
         case USER_BAN: handler_user_ban(pkt, client, s); break;
+        case USER_UNBAN: handler_user_unban(pkt, client, s); break;
         default:
             fprintf(stderr, "[handler] unknown packet type %d\n", pkt->type);
             reply_error(client, "unknown packet type");
@@ -387,6 +388,16 @@ void handler_user_list(const Packet *pkt, ClientInfo *client, ServerState *s)
     reply_ok(client, "user_list: done");
 }
 
+/* moderator -> may target a user; admin -> may target a user or a
+   moderator (but not another admin); plain users can't target anyone.
+   Shared by ban and unban since the "who can act on whom" rule is the same
+   for both directions. */
+static int can_moderate_target(int my_role, int target_role)
+{
+    return (my_role == ROLE_MODERATOR && target_role == ROLE_USER) ||
+          (my_role == ROLE_ADMIN && (target_role == ROLE_USER || target_role == ROLE_MODERATOR));
+}
+
 void handler_user_ban(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
     if (!client_is_authenticated(client)) {
@@ -402,8 +413,6 @@ void handler_user_ban(const Packet *pkt, ClientInfo *client, ServerState *s)
     int target_id      = atoi(pkt->fields[0]);
     const char *reason = pkt->fields[1];
 
-    /* moderator -> may ban a user; admin -> may ban a user or a moderator
-       (but not another admin); plain users can't ban anyone */
     if (client->role_id != ROLE_MODERATOR && client->role_id != ROLE_ADMIN) {
         reply_error(client, "user_ban: forbidden");
         return;
@@ -415,9 +424,7 @@ void handler_user_ban(const Packet *pkt, ClientInfo *client, ServerState *s)
         return;
     }
 
-    int allowed = (client->role_id == ROLE_MODERATOR && target_role == ROLE_USER) ||
-                 (client->role_id == ROLE_ADMIN && (target_role == ROLE_USER || target_role == ROLE_MODERATOR));
-    if (!allowed) {
+    if (!can_moderate_target(client->role_id, target_role)) {
         reply_error(client, "user_ban: forbidden");
         return;
     }
@@ -430,4 +437,45 @@ void handler_user_ban(const Packet *pkt, ClientInfo *client, ServerState *s)
 
     printf("[handler] user %d banned user %d\n", client->user_id, target_id);
     reply_ok(client, "banned");
+    broadcast_user_list(s);
+}
+
+void handler_user_unban(const Packet *pkt, ClientInfo *client, ServerState *s)
+{
+    if (!client_is_authenticated(client)) {
+        reply_error(client, "user_unban: not authenticated");
+        return;
+    }
+
+    if (pkt->field_count < 1) {
+        reply_error(client, "user_unban: missing user_id");
+        return;
+    }
+
+    int target_id = atoi(pkt->fields[0]);
+
+    if (client->role_id != ROLE_MODERATOR && client->role_id != ROLE_ADMIN) {
+        reply_error(client, "user_unban: forbidden");
+        return;
+    }
+
+    int target_role = db_user_get_role(s->db, target_id);
+    if (target_role == -1) {
+        reply_error(client, "user_unban: target not found");
+        return;
+    }
+
+    if (!can_moderate_target(client->role_id, target_role)) {
+        reply_error(client, "user_unban: forbidden");
+        return;
+    }
+
+    if (db_user_unban(s->db, target_id) != 0) {
+        reply_error(client, "user_unban: db error or not banned");
+        return;
+    }
+
+    printf("[handler] user %d unbanned user %d\n", client->user_id, target_id);
+    reply_ok(client, "unbanned");
+    broadcast_user_list(s);
 }

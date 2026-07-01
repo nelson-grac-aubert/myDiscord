@@ -20,9 +20,9 @@ int db_user_is_banned(PGconn *db, int user_id);
 /* Returns the user's id_role, or -1 if not found/on error */
 int db_user_get_role(PGconn *db, int user_id);
 
-/* Fills out with "id_user:first_name" for every registered account
-   (regardless of whether they're currently connected). Returns row count,
-   -1 on error. */
+/* Fills out with "id_user:first_name:is_banned" for every registered
+   account (regardless of whether they're currently connected). Returns
+   row count, -1 on error. */
 int db_user_list_all(PGconn *db, char out[][170], int max_rows);
 
 /* Returns the new id_message on success, -1 on error.
@@ -60,5 +60,9 @@ int db_channel_leave(PGconn *db, int user_id, int channel_id);
 
 /* Returns 0 on success, -1 on failure */
 int db_user_ban(PGconn *db, int target_id, int banned_by, const char *reason);
+
+/* Removes all blacklist entries for target_id. Returns 0 on success,
+   -1 if the user wasn't banned or on db error. */
+int db_user_unban(PGconn *db, int target_id);
 
 #endif /* DB_H */

@@ -106,8 +106,14 @@ int db_user_get_role(PGconn *db, int user_id)
 
 int db_user_list_all(PGconn *db, char out[][170], int max_rows)
 {
+    /* EXISTS rather than a LEFT JOIN: blacklist has no UNIQUE(id_user), so a
+       user banned/unbanned/re-banned could have multiple rows there, which
+       a JOIN would turn into duplicate entries for the same account */
     PGresult *res = PQexecParams(db,
-        "SELECT id_user, first_name FROM \"user\" ORDER BY first_name",
+        "SELECT u.id_user, u.first_name, "
+        "       CASE WHEN EXISTS (SELECT 1 FROM blacklist b WHERE b.id_user = u.id_user) "
+        "            THEN 1 ELSE 0 END AS is_banned "
+        "FROM \"user\" u ORDER BY u.first_name",
         0, NULL, NULL, NULL, NULL, 0);
 
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
@@ -119,7 +125,8 @@ int db_user_list_all(PGconn *db, char out[][170], int max_rows)
     int count = PQntuples(res);
     if (count > max_rows) count = max_rows;
     for (int i = 0; i < count; i++)
-        snprintf(out[i], 170, "%s:%s", PQgetvalue(res, i, 0), PQgetvalue(res, i, 1));
+        snprintf(out[i], 170, "%s:%s:%s",
+                 PQgetvalue(res, i, 0), PQgetvalue(res, i, 1), PQgetvalue(res, i, 2));
 
     PQclear(res);
     return count;
@@ -356,6 +363,24 @@ int db_user_ban(PGconn *db, int target_id, int banned_by, const char *reason)
     int ok = PQresultStatus(res) == PGRES_COMMAND_OK ? 0 : -1;
     if (ok != 0)
         fprintf(stderr, "[db] user_ban failed: %s\n", PQerrorMessage(db));
+    PQclear(res);
+    return ok;
+}
+
+int db_user_unban(PGconn *db, int target_id)
+{
+    char tid[16];
+    snprintf(tid, sizeof(tid), "%d", target_id);
+
+    const char *params[] = { tid };
+    PGresult *res = PQexecParams(db,
+        "DELETE FROM blacklist WHERE id_user = $1",
+        1, NULL, params, NULL, NULL, 0);
+
+    int ok = (PQresultStatus(res) == PGRES_COMMAND_OK &&
+              atoi(PQcmdTuples(res)) > 0) ? 0 : -1;
+    if (ok != 0)
+        fprintf(stderr, "[db] user_unban failed or not banned: %s\n", PQerrorMessage(db));
     PQclear(res);
     return ok;
 }

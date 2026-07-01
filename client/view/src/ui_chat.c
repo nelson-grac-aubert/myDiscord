@@ -512,7 +512,7 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
         draw_text(renderer, font_main, "Create", modal_btn_ok.x + 25, modal_btn_ok.y + 10, color_white);
     }
 
-    // 7. Menu contextuel "Ban User" (survol du panneau des membres en ligne)
+    // 7. Menu contextuel "Ban User" / "Unban User" (panneau des membres)
     if (layout->show_user_context_menu)
     {
         layout->btn_ban_user_rect = (SDL_Rect){layout->context_menu_x, layout->context_menu_y, 140, 32};
@@ -522,9 +522,18 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
         SDL_SetRenderDrawColor(renderer, 0x3F, 0x41, 0x47, 0xFF);
         SDL_RenderDrawRect(renderer, &layout->btn_ban_user_rect);
 
-        SDL_Color ban_color = {0xF0, 0x47, 0x47, 0xFF};
-        draw_text(renderer, font_main, "Ban User", layout->btn_ban_user_rect.x + 14,
-                 layout->btn_ban_user_rect.y + 8, ban_color);
+        if (layout->context_menu_is_unban)
+        {
+            SDL_Color unban_color = {0x3B, 0xA5, 0x5C, 0xFF};
+            draw_text(renderer, font_main, "Unban User", layout->btn_ban_user_rect.x + 14,
+                     layout->btn_ban_user_rect.y + 8, unban_color);
+        }
+        else
+        {
+            SDL_Color ban_color = {0xF0, 0x47, 0x47, 0xFF};
+            draw_text(renderer, font_main, "Ban User", layout->btn_ban_user_rect.x + 14,
+                     layout->btn_ban_user_rect.y + 8, ban_color);
+        }
     }
 }
 
