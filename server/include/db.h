@@ -9,14 +9,21 @@ int db_user_register(PGconn *db, const char *email,
                      const char *password, int id_role);
 
 /* Returns id_user on success, -1 if not found or wrong password.
-   role_id_out is filled with the user's id_role on success. */
-int db_user_login(PGconn *db, const char *email, const char *password, int *role_id_out);
+   role_id_out is filled with the user's id_role, username_out (>= 100 bytes)
+   with their first_name, on success. */
+int db_user_login(PGconn *db, const char *email, const char *password,
+                 int *role_id_out, char *username_out);
 
 /* Returns 1 if user is banned, 0 if not, -1 on error */
 int db_user_is_banned(PGconn *db, int user_id);
 
 /* Returns the user's id_role, or -1 if not found/on error */
 int db_user_get_role(PGconn *db, int user_id);
+
+/* Fills out with "id_user:first_name" for every registered account
+   (regardless of whether they're currently connected). Returns row count,
+   -1 on error. */
+int db_user_list_all(PGconn *db, char out[][170], int max_rows);
 
 /* Returns the new id_message on success, -1 on error.
    timestamp_out must be at least 6 bytes ("HH:MM\0"), filled with the

@@ -77,8 +77,8 @@ void handler_register(const Packet *pkt, ClientInfo *client, ServerState *s)
 
     client->user_id = user_id;
     client->role_id = ROLE_USER;
-    strncpy(client->email, email, sizeof(client->email) - 1);
-    client->email[sizeof(client->email) - 1] = '\0';
+    strncpy(client->username, first_name, sizeof(client->username) - 1);
+    client->username[sizeof(client->username) - 1] = '\0';
     printf("[handler] REGISTER ok: client #%d is now user %d\n", client->id, user_id);
 
     char resp[32];
@@ -98,7 +98,8 @@ void handler_login(const Packet *pkt, ClientInfo *client, ServerState *s)
     const char *password = pkt->fields[1];
 
     int role_id = -1;
-    int user_id = db_user_login(s->db, email, password, &role_id);
+    char username[100];
+    int user_id = db_user_login(s->db, email, password, &role_id, username);
     if (user_id == -1) {
         reply_error(client, "login: invalid credentials");
         return;
@@ -111,8 +112,8 @@ void handler_login(const Packet *pkt, ClientInfo *client, ServerState *s)
 
     client->user_id = user_id;
     client->role_id = role_id;
-    strncpy(client->email, email, sizeof(client->email) - 1);
-    client->email[sizeof(client->email) - 1] = '\0';
+    strncpy(client->username, username, sizeof(client->username) - 1);
+    client->username[sizeof(client->username) - 1] = '\0';
     printf("[handler] LOGIN ok: client #%d is now user %d\n", client->id, user_id);
 
     char resp[32];
@@ -160,14 +161,14 @@ void handler_msg_send(const Packet *pkt, ClientInfo *client, ServerState *s)
         return;
     }
 
-    /* Broadcast "channel_id|message_id|HH:MM|sender_email|content" so
+    /* Broadcast "channel_id|message_id|HH:MM|sender_username|content" so
        receivers can route the message to the right channel, show who
        actually sent it and when (including to the sender's own client),
        and dedupe it against the same message re-arriving via a later
        MSG_HISTORY fetch */
     char push_payload[PACKET_FIELD_SIZE];
     snprintf(push_payload, PACKET_FIELD_SIZE, "%d|%d|%s|%s|%.320s",
-             client->channel_id, message_id, timestamp, client->email, content);
+             client->channel_id, message_id, timestamp, client->username, content);
 
     Packet push;
     packet_build(&push, SERVER_PUSH, 1, push_payload);

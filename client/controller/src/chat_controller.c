@@ -139,10 +139,11 @@ static void on_server_push(const Packet *pkt)
         return;
     }
 
-    /* Live server-wide roster push: "USERS:id1:email1;id2:email2;..." - a
-       full snapshot of who's currently online, so it always replaces
-       whatever roster we had rather than appending to it. The real
-       user_id is carried so a moderator/admin can target a ban. */
+    /* Live account roster push: "USERS:id1:username1:online1;..." - a full
+       snapshot of every registered account (online or not), so it always
+       replaces whatever roster we had rather than appending to it. The
+       real user_id is carried so a moderator/admin can target a ban,
+       including someone who's currently offline. */
     if (strncmp(payload, "USERS:", 6) == 0) {
         const char *data = payload + 6;
         char buf[PACKET_FIELD_SIZE];
@@ -153,13 +154,16 @@ static void on_server_push(const Packet *pkt)
 
         char *tok = strtok(buf, ";");
         while (tok != NULL) {
-            char *colon = strchr(tok, ':');
-            if (colon) {
-                *colon = '\0';
+            char *c1 = strchr(tok, ':');
+            char *c2 = c1 ? strchr(c1 + 1, ':') : NULL;
+            if (c1 && c2) {
+                *c1 = '\0';
+                *c2 = '\0';
                 int uid = atoi(tok);
-                const char *uemail = colon + 1;
-                if (uid > 0 && strlen(uemail) > 0)
-                    user_model_add(uid, uemail, 1);
+                const char *uname = c1 + 1;
+                int is_online = atoi(c2 + 1);
+                if (uid > 0 && strlen(uname) > 0)
+                    user_model_add(uid, uname, is_online);
             }
             tok = strtok(NULL, ";");
         }
@@ -524,15 +528,34 @@ void chat_controller_handle_right_click(ChatLayout *layout, int cx, int cy)
     if (cx < layout->sidebar_members.x || cx > layout->sidebar_members.x + layout->sidebar_members.w)
         return;
 
+    /* This hit-test must mirror users_draw_sidebar's layout exactly (row
+       height 30, header-to-first-row gap 35, online-to-offline gap 20) */
     User online_users[MAX_USERS];
-    int count = user_model_get_online(online_users, MAX_USERS);
+    int online_count = user_model_get_online(online_users, MAX_USERS);
 
     int user_y = 55;
-    for (int i = 0; i < count; i++) {
+    for (int i = 0; i < online_count; i++) {
         if (cy >= user_y - 4 && cy <= user_y - 4 + 28) {
             if (online_users[i].id != auth_controller_get_user_id()) {
                 layout->show_user_context_menu = 1;
                 layout->context_menu_target_user_id = online_users[i].id;
+                layout->context_menu_x = cx;
+                layout->context_menu_y = cy;
+            }
+            return;
+        }
+        user_y += 30;
+    }
+
+    User offline_users[MAX_USERS];
+    int offline_count = user_model_get_offline(offline_users, MAX_USERS);
+
+    user_y += 20 + 35; /* online-to-offline gap + offline header gap */
+    for (int i = 0; i < offline_count; i++) {
+        if (cy >= user_y - 4 && cy <= user_y - 4 + 28) {
+            if (offline_users[i].id != auth_controller_get_user_id()) {
+                layout->show_user_context_menu = 1;
+                layout->context_menu_target_user_id = offline_users[i].id;
                 layout->context_menu_x = cx;
                 layout->context_menu_y = cy;
             }

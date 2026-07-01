@@ -21,6 +21,19 @@ int user_model_get_online(User* out_users, int max_out) {
     return count;
 }
 
+int user_model_get_offline(User* out_users, int max_out) {
+    int count = 0;
+    for (int i = 0; i < local_user_count; i++) {
+        if (!local_users[i].is_online) {
+            if (count < max_out) {
+                out_users[count] = local_users[i];
+                count++;
+            }
+        }
+    }
+    return count;
+}
+
 void user_model_add(int id, const char* username, int is_online) {
     if (local_user_count >= MAX_USERS) return;
 

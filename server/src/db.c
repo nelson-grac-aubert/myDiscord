@@ -46,11 +46,12 @@ int db_user_register(PGconn *db, const char *email,
     return id;
 }
 
-int db_user_login(PGconn *db, const char *email, const char *password, int *role_id_out)
+int db_user_login(PGconn *db, const char *email, const char *password,
+                  int *role_id_out, char *username_out)
 {
     const char *params[] = { email };
     PGresult *res = PQexecParams(db,
-        "SELECT id_user, password_hash, id_role FROM \"user\" WHERE email = $1",
+        "SELECT id_user, password_hash, id_role, first_name FROM \"user\" WHERE email = $1",
         1, NULL, params, NULL, NULL, 0);
 
     if (!exec_has_rows(res)) {
@@ -63,6 +64,8 @@ int db_user_login(PGconn *db, const char *email, const char *password, int *role
     char stored[CRYPTO_SALT_LEN + CRYPTO_HASH_LEN + 2];
     strncpy(stored, PQgetvalue(res, 0, 1), sizeof(stored) - 1);
     stored[sizeof(stored) - 1] = '\0';
+    strncpy(username_out, PQgetvalue(res, 0, 3), 99);
+    username_out[99] = '\0';
     PQclear(res);
 
     /* Split "salt:hash" */
@@ -99,6 +102,27 @@ int db_user_get_role(PGconn *db, int user_id)
     int role_id = atoi(PQgetvalue(res, 0, 0));
     PQclear(res);
     return role_id;
+}
+
+int db_user_list_all(PGconn *db, char out[][170], int max_rows)
+{
+    PGresult *res = PQexecParams(db,
+        "SELECT id_user, first_name FROM \"user\" ORDER BY first_name",
+        0, NULL, NULL, NULL, NULL, 0);
+
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        fprintf(stderr, "[db] user_list_all failed: %s\n", PQerrorMessage(db));
+        PQclear(res);
+        return -1;
+    }
+
+    int count = PQntuples(res);
+    if (count > max_rows) count = max_rows;
+    for (int i = 0; i < count; i++)
+        snprintf(out[i], 170, "%s:%s", PQgetvalue(res, i, 0), PQgetvalue(res, i, 1));
+
+    PQclear(res);
+    return count;
 }
 
 int db_user_is_banned(PGconn *db, int user_id)
@@ -167,7 +191,7 @@ int db_message_history(PGconn *db, int channel_id, int limit,
     const char *params[] = { cid, lim };
     PGresult *res = PQexecParams(db,
         "SELECT * FROM ("
-        "  SELECT u.email, m.encrypted_content, m.id_message, m.content_iv, "
+        "  SELECT u.first_name, m.encrypted_content, m.id_message, m.content_iv, "
         "         to_char(m.sent_at, 'HH24:MI') AS ts "
         "  FROM message m JOIN \"user\" u ON u.id_user = m.id_author "
         "  WHERE m.id_channel = $1 ORDER BY m.sent_at DESC LIMIT $2"

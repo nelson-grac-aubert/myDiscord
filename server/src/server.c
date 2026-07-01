@@ -1,5 +1,6 @@
 #include "../include/server.h"
 #include "../include/client_handler.h"
+#include "../include/db.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -117,34 +118,51 @@ void broadcast_to_channel(ClientRegistry *reg, int channel_id, const Packet *pkt
     ReleaseMutex(reg->mutex);
 }
 
-/* Sends every currently-connected, authenticated client the full, current
-   server-wide roster as one "USERS:id1:email1;id2:email2;..." push, so
+/* Sends every currently-connected, authenticated client the full account
+   roster - every registered user, online or not - as one
+   "USERS:id1:username1:online1;id2:username2:online2;..." push, so
    receivers just replace their local list rather than reconciling a diff.
-   The real user_id is included (not just the email) so a client can target
-   a USER_BAN at a specific person. Presence is independent of which channel
-   anyone is viewing - called on login/register/disconnect so every
-   client's member sidebar stays live and identical regardless of channel. */
+   The real user_id is included (not just the display name) so a client can
+   target a USER_BAN at a specific person, including someone offline.
+   Called on login/register/disconnect so every client's member sidebar
+   stays live, independent of which channel anyone is viewing. */
+#define MAX_ROSTER_USERS 200
+
 void broadcast_user_list(ServerState *s)
 {
+    char all_rows[MAX_ROSTER_USERS][170];
+    int all_count = db_user_list_all(s->db, all_rows, MAX_ROSTER_USERS);
+    if (all_count < 0) all_count = 0;
+
     char payload[PACKET_FIELD_SIZE] = "USERS:";
     size_t len = strlen(payload);
     char buf[PACKET_MAX_SIZE];
 
     WaitForSingleObject(s->registry.mutex, INFINITE);
 
-    for (int i = 0; i < MAX_CLIENTS; i++) {
-        ClientInfo *c = s->registry.clients[i];
-        if (c != NULL && c->user_id != -1) {
-            char entry[170];
-            int entry_len = snprintf(entry, sizeof(entry), "%d:%s", c->user_id, c->email);
-            if (entry_len < 0 || len + (size_t)entry_len + 2 >= sizeof(payload))
-                break;
-            if (len > strlen("USERS:"))
-                payload[len++] = ';';
-            memcpy(payload + len, entry, entry_len);
-            len += entry_len;
-            payload[len] = '\0';
+    for (int i = 0; i < all_count; i++) {
+        char *colon = strchr(all_rows[i], ':');
+        if (!colon)
+            continue;
+        *colon = '\0';
+        int uid = atoi(all_rows[i]);
+        const char *uname = colon + 1;
+
+        int is_online = 0;
+        for (int j = 0; j < MAX_CLIENTS; j++) {
+            ClientInfo *c = s->registry.clients[j];
+            if (c != NULL && c->user_id == uid) { is_online = 1; break; }
         }
+
+        char entry[190];
+        int entry_len = snprintf(entry, sizeof(entry), "%d:%s:%d", uid, uname, is_online);
+        if (entry_len < 0 || len + (size_t)entry_len + 2 >= sizeof(payload))
+            break;
+        if (len > strlen("USERS:"))
+            payload[len++] = ';';
+        memcpy(payload + len, entry, entry_len);
+        len += entry_len;
+        payload[len] = '\0';
     }
 
     Packet push;
@@ -250,7 +268,7 @@ static ClientInfo *make_client(SOCKET sock, struct sockaddr_in *addr, int id)
     client->id = id;
     client->user_id = -1;
     client->channel_id = -1;
-    client->email[0] = '\0';
+    client->username[0] = '\0';
     client->role_id = -1;
     strncpy(client->ip, inet_ntoa(addr->sin_addr), sizeof(client->ip) - 1);
     client->ip[sizeof(client->ip) - 1] = '\0';

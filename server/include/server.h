@@ -20,7 +20,7 @@ typedef struct {
     int id;
     int user_id; /* -1 until AUTH_LOGIN succeeds */
     int channel_id; /* current channel, -1 if none */
-    char email[150]; /* set once AUTH_LOGIN/AUTH_REGISTER succeeds, used as display name */
+    char username[100]; /* first_name, set once AUTH_LOGIN/AUTH_REGISTER succeeds, used as display name */
     int role_id; /* -1 until AUTH_LOGIN/AUTH_REGISTER succeeds */
 } ClientInfo;
 
