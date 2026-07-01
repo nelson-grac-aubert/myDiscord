@@ -422,7 +422,7 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
         // On affiche l'icône d'appel
         draw_text(renderer, font_emoji, "📞", layout->btn_call.x + 6, layout->btn_call.y + 6, call_color);
 
-        // Bouton : Log Out 🚪
+        // Bouton : Log Out 
         int is_logout_hovered = (mx >= layout->btn_logout.x && mx <= layout->btn_logout.x + layout->btn_logout.w &&
                                  my >= layout->btn_logout.y && my <= layout->btn_logout.y + layout->btn_logout.h);
         if (is_logout_hovered)
@@ -434,7 +434,6 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
             SDL_SetRenderDrawColor(renderer, 170, 30, 30, 255);
         }
         SDL_RenderFillRect(renderer, &layout->btn_logout);
-        draw_text(renderer, font_emoji, "🚪", layout->btn_logout.x + 15, layout->btn_logout.y + 6, color_white);
         draw_text(renderer, font_sub, "Log Out", layout->btn_logout.x + 50, layout->btn_logout.y + 10, color_white);
     }
 

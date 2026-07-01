@@ -525,43 +525,20 @@ void chat_controller_handle_right_click(ChatLayout *layout, int cx, int cy)
     if (my_role != ROLE_MODERATOR && my_role != ROLE_ADMIN)
         return;
 
-    if (cx < layout->sidebar_members.x || cx > layout->sidebar_members.x + layout->sidebar_members.w)
-        return;
-
-    /* This hit-test must mirror users_draw_sidebar's layout exactly (row
-       height 30, header-to-first-row gap 35, online-to-offline gap 20) */
-    User online_users[MAX_USERS];
-    int online_count = user_model_get_online(online_users, MAX_USERS);
-
-    int user_y = 55;
-    for (int i = 0; i < online_count; i++) {
-        if (cy >= user_y - 4 && cy <= user_y - 4 + 28) {
-            if (online_users[i].id != auth_controller_get_user_id()) {
+    /* member_row_rect/member_row_user_id are populated fresh every frame by
+       users_draw_sidebar (both the online and offline sections), so this
+       hit-test always matches exactly what's on screen */
+    for (int i = 0; i < layout->member_row_count; i++) {
+        SDL_Rect *r = &layout->member_row_rect[i];
+        if (cx >= r->x && cx <= r->x + r->w && cy >= r->y && cy <= r->y + r->h) {
+            if (layout->member_row_user_id[i] != auth_controller_get_user_id()) {
                 layout->show_user_context_menu = 1;
-                layout->context_menu_target_user_id = online_users[i].id;
+                layout->context_menu_target_user_id = layout->member_row_user_id[i];
                 layout->context_menu_x = cx;
                 layout->context_menu_y = cy;
             }
             return;
         }
-        user_y += 30;
-    }
-
-    User offline_users[MAX_USERS];
-    int offline_count = user_model_get_offline(offline_users, MAX_USERS);
-
-    user_y += 20 + 35; /* online-to-offline gap + offline header gap */
-    for (int i = 0; i < offline_count; i++) {
-        if (cy >= user_y - 4 && cy <= user_y - 4 + 28) {
-            if (offline_users[i].id != auth_controller_get_user_id()) {
-                layout->show_user_context_menu = 1;
-                layout->context_menu_target_user_id = offline_users[i].id;
-                layout->context_menu_x = cx;
-                layout->context_menu_y = cy;
-            }
-            return;
-        }
-        user_y += 30;
     }
 }
 

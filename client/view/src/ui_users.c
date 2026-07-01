@@ -3,7 +3,18 @@
 #include "../include/ui_login.h" // For draw_text
 #include <stdio.h>
 
+static void record_member_row(ChatLayout *layout, int user_y, int user_id) {
+    if (layout->member_row_count >= MAX_MEMBER_ROWS)
+        return;
+    layout->member_row_rect[layout->member_row_count] =
+        (SDL_Rect){layout->sidebar_members.x + 8, user_y - 4, layout->sidebar_members.w - 16, 28};
+    layout->member_row_user_id[layout->member_row_count] = user_id;
+    layout->member_row_count++;
+}
+
 void users_draw_sidebar(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *font_main, TTF_Font *font_sub, SDL_Color green_online, SDL_Color dark_gray) {
+    layout->member_row_count = 0;
+
     if (layout->sidebar_members.w > 0) {
         User online_users[MAX_USERS];
         int online_count = user_model_get_online(online_users, MAX_USERS);
@@ -15,12 +26,10 @@ void users_draw_sidebar(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *fo
         int user_y = 55;
         for (int i = 0; i < online_count; i++) {
             draw_text(renderer, font_main, online_users[i].username, layout->sidebar_members.x + 20, user_y, green_online);
+            record_member_row(layout, user_y, online_users[i].id);
             user_y += 30;
         }
 
-        /* NOTE: this layout (row height 30, header-to-first-row gap 35) is
-           duplicated in chat_controller_handle_right_click's hit-test for
-           the ban context menu - keep both in sync. */
         User offline_users[MAX_USERS];
         int offline_count = user_model_get_offline(offline_users, MAX_USERS);
 
@@ -32,6 +41,7 @@ void users_draw_sidebar(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *fo
 
         for (int i = 0; i < offline_count; i++) {
             draw_text(renderer, font_main, offline_users[i].username, layout->sidebar_members.x + 20, user_y, dark_gray);
+            record_member_row(layout, user_y, offline_users[i].id);
             user_y += 30;
         }
     }

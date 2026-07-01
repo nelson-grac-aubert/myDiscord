@@ -19,6 +19,17 @@ static void reply_ok(ClientInfo *client, const char *msg)
     send_packet(client, &pkt);
 }
 
+/* Login/register need to hand back two distinct values (user_id and
+   role_id) as separate packet fields, not one "id|role" string crammed
+   into a single field - reply_ok's single-field packet would leave
+   field_count at 1 and pkt->fields[1] never populated */
+static void reply_ok2(ClientInfo *client, const char *field1, const char *field2)
+{
+    Packet pkt;
+    packet_build(&pkt, SERVER_OK, 2, field1, field2);
+    send_packet(client, &pkt);
+}
+
 static void reply_error(ClientInfo *client, const char *reason)
 {
     Packet pkt;
@@ -81,9 +92,10 @@ void handler_register(const Packet *pkt, ClientInfo *client, ServerState *s)
     client->username[sizeof(client->username) - 1] = '\0';
     printf("[handler] REGISTER ok: client #%d is now user %d\n", client->id, user_id);
 
-    char resp[32];
-    snprintf(resp, sizeof(resp), "%d|%d", user_id, client->role_id);
-    reply_ok(client, resp);
+    char uid_str[16], role_str[16];
+    snprintf(uid_str, sizeof(uid_str), "%d", user_id);
+    snprintf(role_str, sizeof(role_str), "%d", client->role_id);
+    reply_ok2(client, uid_str, role_str);
     broadcast_user_list(s);
 }
 
@@ -116,9 +128,10 @@ void handler_login(const Packet *pkt, ClientInfo *client, ServerState *s)
     client->username[sizeof(client->username) - 1] = '\0';
     printf("[handler] LOGIN ok: client #%d is now user %d\n", client->id, user_id);
 
-    char resp[32];
-    snprintf(resp, sizeof(resp), "%d|%d", user_id, client->role_id);
-    reply_ok(client, resp);
+    char uid_str[16], role_str[16];
+    snprintf(uid_str, sizeof(uid_str), "%d", user_id);
+    snprintf(role_str, sizeof(role_str), "%d", client->role_id);
+    reply_ok2(client, uid_str, role_str);
     broadcast_user_list(s);
 }
 

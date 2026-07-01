@@ -6,6 +6,8 @@
 #include "message.h"
 #include "variables.h"
 
+#define MAX_MEMBER_ROWS 64
+
 typedef struct
 {
     int window_w;
@@ -61,6 +63,14 @@ typedef struct
     int show_user_context_menu;
     int context_menu_target_user_id;
     SDL_Rect btn_ban_user_rect;
+
+    // Populated each frame by users_draw_sidebar (one entry per rendered
+    // row, online or offline) and consumed by
+    // chat_controller_handle_right_click, so hit-testing always matches
+    // exactly what was drawn instead of duplicating the layout math
+    SDL_Rect member_row_rect[MAX_MEMBER_ROWS];
+    int member_row_user_id[MAX_MEMBER_ROWS];
+    int member_row_count;
 } ChatLayout;
 
 extern SDL_Rect modal_input_rect;
