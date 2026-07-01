@@ -16,15 +16,32 @@
 #endif
 
 static SDL_Renderer *current_renderer = NULL;
+static int g_first_channel_joined = 0;
 
 extern SDL_Rect modal_bg_rect, modal_input_rect, modal_toggle_rect,
                modal_btn_ok, modal_btn_cancel;
 
 static char *open_file_explorer(void);
 
+static void request_channel_join_and_history(int channel_id)
+{
+    char id_str[16];
+    snprintf(id_str, sizeof(id_str), "%d", channel_id);
+
+    Packet join;
+    packet_build(&join, CHANNEL_JOIN, 1, id_str);
+    client_socket_send(&g_client_socket, &join);
+
+    char lim_str[8];
+    snprintf(lim_str, sizeof(lim_str), "50");
+    Packet hist;
+    packet_build(&hist, MSG_HISTORY, 2, id_str, lim_str);
+    client_socket_send(&g_client_socket, &hist);
+}
+
 static void on_server_push(const Packet *pkt)
 {
-    /* Ignore server acknowledgments, only handle real pushes */
+    /* Ignore server acknowledgments */
     if (pkt->type == SERVER_OK || pkt->type == SERVER_ERROR)
         return;
 
@@ -52,8 +69,15 @@ static void on_server_push(const Packet *pkt)
                 Channel *ch = channel_model_get_by_index(i);
                 if (ch && ch->id == id) { found = 1; break; }
             }
-            if (!found)
+            if (!found) {
                 channel_model_add(id, p2, is_private);
+
+                /* Auto-join the first channel received */
+                if (!g_first_channel_joined) {
+                    g_first_channel_joined = 1;
+                    request_channel_join_and_history(id);
+                }
+            }
         }
         return;
     }
@@ -96,16 +120,6 @@ static void send_message(ChatLayout *layout, Channel *active)
     layout->input_buffer[0] = '\0';
 }
 
-static void request_channel_join(int channel_id)
-{
-    char id_str[16];
-    snprintf(id_str, sizeof(id_str), "%d", channel_id);
-
-    Packet pkt;
-    packet_build(&pkt, CHANNEL_JOIN, 1, id_str);
-    client_socket_send(&g_client_socket, &pkt);
-}
-
 static void request_channel_list(void)
 {
     Packet pkt;
@@ -128,13 +142,12 @@ void chat_controller_init(ChatLayout *layout, SDL_Renderer *renderer)
     layout->hover_message_delete_index = -1;
     layout->show_context_menu = 0;
     g_is_mic_muted = 0;
+    g_first_channel_joined = 0;
 
     auth_controller_set_chat_callback(on_server_push);
-    request_channel_list();
 
-    Channel *first = channel_model_get_by_index(0);
-    if (first)
-        request_channel_join(first->id);
+    /* Request channel list; first received channel will be auto-joined */
+    request_channel_list();
 }
 
 void chat_controller_destroy(ChatLayout *layout) { (void)layout; }
@@ -243,7 +256,7 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
                 channel_model_set_active_index(i);
                 Channel *ch = channel_model_get_by_index(i);
                 if (ch)
-                    request_channel_join(ch->id);
+                    request_channel_join_and_history(ch->id);
                 return 0;
             }
             channel_y += 32;
