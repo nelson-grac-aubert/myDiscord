@@ -59,10 +59,13 @@ static void request_channel_join_and_history(int channel_id)
     Packet hist;
     packet_build(&hist, MSG_HISTORY, 2, id_str, lim_str);
     client_socket_send(&g_client_socket, &hist);
+}
 
-    Packet users;
-    packet_build(&users, USER_LIST, 1, id_str);
-    client_socket_send(&g_client_socket, &users);
+static void request_user_list(void)
+{
+    Packet pkt;
+    packet_build(&pkt, USER_LIST, 0);
+    client_socket_send(&g_client_socket, &pkt);
 }
 
 static void on_server_push(const Packet *pkt)
@@ -250,6 +253,10 @@ void chat_controller_init(ChatLayout *layout, SDL_Renderer *renderer)
 
     /* Request channel list; first received channel will be auto-joined */
     request_channel_list();
+
+    /* Online-users roster is server-wide, independent of channel, so it's
+       requested once here rather than on every channel switch */
+    request_user_list();
 }
 
 void chat_controller_destroy(ChatLayout *layout) { (void)layout; }

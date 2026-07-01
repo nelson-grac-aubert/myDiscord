@@ -81,6 +81,7 @@ void handler_register(const Packet *pkt, ClientInfo *client, ServerState *s)
     char resp[32];
     snprintf(resp, sizeof(resp), "%d", user_id);
     reply_ok(client, resp);
+    broadcast_user_list(s);
 }
 
 void handler_login(const Packet *pkt, ClientInfo *client, ServerState *s)
@@ -112,15 +113,17 @@ void handler_login(const Packet *pkt, ClientInfo *client, ServerState *s)
     char resp[32];
     snprintf(resp, sizeof(resp), "%d", user_id);
     reply_ok(client, resp);
+    broadcast_user_list(s);
 }
 
 void handler_logout(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
-    (void)pkt; (void)s;
+    (void)pkt;
     printf("[handler] LOGOUT: user %d\n", client->user_id);
     client->user_id    = -1;
     client->channel_id = -1;
     reply_ok(client, "logged out");
+    broadcast_user_list(s);
 }
 
 void handler_msg_send(const Packet *pkt, ClientInfo *client, ServerState *s)
@@ -324,18 +327,11 @@ void handler_channel_join(const Packet *pkt, ClientInfo *client, ServerState *s)
     }
 
     int channel_id = atoi(pkt->fields[0]);
-    int previous_channel_id = client->channel_id;
     db_channel_join(s->db, client->user_id, channel_id);
     client->channel_id = channel_id;
 
     printf("[handler] user %d joined channel %d\n", client->user_id, channel_id);
     reply_ok(client, "joined");
-
-    /* Refresh the roster for both the channel just joined (so its other
-       members see the newcomer) and the one just left (so it drops them) */
-    broadcast_user_list(s, channel_id);
-    if (previous_channel_id != -1 && previous_channel_id != channel_id)
-        broadcast_user_list(s, previous_channel_id);
 }
 
 void handler_channel_leave(const Packet *pkt, ClientInfo *client, ServerState *s)
@@ -357,23 +353,17 @@ void handler_channel_leave(const Packet *pkt, ClientInfo *client, ServerState *s
         client->channel_id = -1;
 
     reply_ok(client, "left");
-    broadcast_user_list(s, channel_id);
 }
 
 void handler_user_list(const Packet *pkt, ClientInfo *client, ServerState *s)
 {
+    (void)pkt;
     if (!client_is_authenticated(client)) {
         reply_error(client, "user_list: not authenticated");
         return;
     }
 
-    if (pkt->field_count < 1) {
-        reply_error(client, "user_list: missing channel_id");
-        return;
-    }
-
-    int channel_id = atoi(pkt->fields[0]);
-    broadcast_user_list(s, channel_id);
+    broadcast_user_list(s);
     reply_ok(client, "user_list: done");
 }
 
