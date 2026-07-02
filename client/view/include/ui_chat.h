@@ -56,6 +56,8 @@ typedef struct
     int context_menu_x;
     int context_menu_y;
     char modal_buffer[256];
+    int input_cursor_pos;  // Position du curseur dans le chat
+    int modal_cursor_pos;  // Position du curseur dans la modale
 } ChatLayout;
 
 // Global coordinates for modal layouts shared with controllers

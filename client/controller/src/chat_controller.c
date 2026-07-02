@@ -3,6 +3,7 @@
 #include "message.h"
 #include "ui_call.h"
 #include "ui_channels.h"
+#include "ui_login.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -12,7 +13,7 @@
 #endif
 
 static SDL_Renderer *current_renderer = NULL;
-
+extern TTF_Font *font_main;
 extern SDL_Rect modal_bg_rect, modal_input_rect, modal_toggle_rect, modal_btn_ok, modal_btn_cancel;
 
 static char* open_file_explorer(void);
@@ -32,6 +33,8 @@ void chat_controller_init(ChatLayout *layout, SDL_Renderer *renderer)
     layout->hover_message_delete_index = -1;
     layout->show_context_menu = 0;
     g_is_mic_muted = 0;
+    layout->input_cursor_pos = 0;
+    layout->modal_cursor_pos = 0;
 }
 
 void chat_controller_destroy(ChatLayout *layout)
@@ -51,17 +54,59 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
     // 1. MODALE DE CRÉATION DE SALON
     if (layout->show_create_modal)
     {
+        // Clic SUR le champ de texte de la modale
         if (cx >= modal_input_rect.x && cx <= modal_input_rect.x + modal_input_rect.w &&
             cy >= modal_input_rect.y && cy <= modal_input_rect.y + modal_input_rect.h)
         {
             layout->modal_focused_field = 1;
+            SDL_StartTextInput();
+
+            // Calcul précis du placement du curseur graphique (+12 pixels de marge initiale comme dans ui)
+            int local_x = cx - (modal_input_rect.x + 12);
+            
+            if (local_x <= 0 || layout->modal_buffer[0] == '\0') 
+            {
+                layout->modal_cursor_pos = 0;
+            }
+            else 
+            {
+                int len = (int)strlen(layout->modal_buffer);
+                int last_w = 0;
+                layout->modal_cursor_pos = len; // Par défaut à la fin
+
+                for (int i = 1; i <= len; i++)
+                {
+                    char sub_str[256] = "";
+                    strncpy(sub_str, layout->modal_buffer, i);
+                    sub_str[i] = '\0';
+
+                    // Mesure de la largeur du sous-texte
+                    int current_w = get_text_width(font_main, sub_str);
+
+                    if (local_x < current_w)
+                    {
+                        if (local_x - last_w < current_w - local_x)
+                            layout->modal_cursor_pos = i - 1;
+                        else
+                            layout->modal_cursor_pos = i;
+                        break;
+                    }
+                    last_w = current_w;
+                }
+            }
             return 0;
         }
         else
         {
-            layout->modal_focused_field = 0;
+            // On retire le focus si on clique ailleurs dans la modale (mais pas sur l'input)
+            if (cx >= modal_bg_rect.x && cx <= modal_bg_rect.x + modal_bg_rect.w &&
+                cy >= modal_bg_rect.y && cy <= modal_bg_rect.y + modal_bg_rect.h)
+            {
+                layout->modal_focused_field = 0;
+            }
         }
 
+        // Clic sur l'interrupteur privé / public
         if (cx >= modal_toggle_rect.x && cx <= modal_toggle_rect.x + modal_toggle_rect.w &&
             cy >= modal_toggle_rect.y && cy <= modal_toggle_rect.y + modal_toggle_rect.h)
         {
@@ -69,14 +114,18 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
             return 0;
         }
 
+        // Clic sur CANCEL (Fermeture et réinitialisation complète)
         if (cx >= modal_btn_cancel.x && cx <= modal_btn_cancel.x + modal_btn_cancel.w &&
             cy >= modal_btn_cancel.y && cy <= modal_btn_cancel.y + modal_btn_cancel.h)
         {
             layout->show_create_modal = 0;
+            layout->modal_focused_field = 0;
             layout->modal_buffer[0] = '\0';
+            layout->modal_cursor_pos = 0;
             return 0;
         }
 
+        // Clic sur OK / CREATE
         if (cx >= modal_btn_ok.x && cx <= modal_btn_ok.x + modal_btn_ok.w &&
             cy >= modal_btn_ok.y && cy <= modal_btn_ok.y + modal_btn_ok.h)
         {
@@ -84,8 +133,11 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
             {
                 int next_id = channel_model_get_count() + 1;
                 channel_model_add(next_id, layout->modal_buffer, layout->modal_is_private);
+                
                 layout->show_create_modal = 0;
+                layout->modal_focused_field = 0;
                 layout->modal_buffer[0] = '\0';
+                layout->modal_cursor_pos = 0;
             }
             return 0;
         }
@@ -96,7 +148,7 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
     if (cx >= layout->btn_logout.x && cx <= layout->btn_logout.x + layout->btn_logout.w &&
         cy >= layout->btn_logout.y && cy <= layout->btn_logout.y + layout->btn_logout.h)
     {
-        return 2;
+        return 2; 
     }
 
     // 3. BOUTON AJOUT SALON "➕"
@@ -106,7 +158,9 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
         layout->show_create_modal = 1;
         layout->modal_focused_field = 1;
         layout->modal_buffer[0] = '\0';
+        layout->modal_cursor_pos = 0;
         layout->modal_is_private = 0;
+        SDL_StartTextInput();
         return 0;
     }
 
@@ -114,37 +168,29 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
     if (cx >= layout->btn_call.x && cx <= layout->btn_call.x + layout->btn_call.w &&
         cy >= layout->btn_call.y && cy <= layout->btn_call.y + layout->btn_call.h)
     {
-        // 1. Ouvrir l'interface de l'appel avec le renderer statique et les polices globales
         ouvrir_fenetre_appel(current_renderer, font_title, font_main, font_sub, font_emoji, layout->window_w, layout->window_h);
-
         printf("📞 Clic sur le bouton Appel : Ouverture de la fenêtre d'appel...\n");
-
-        return 1; // On retourne 1 pour indiquer que l'événement de clic a été géré
+        return 1;
     }
 
-    // 5. BOUTON TRANSFERT DE FICHIER
+    // 5. BOUTON TRANSFERT DE FICHIER 📁
     if (cx >= layout->btn_file_transfer.x && cx <= layout->btn_file_transfer.x + layout->btn_file_transfer.w &&
         cy >= layout->btn_file_transfer.y && cy <= layout->btn_file_transfer.y + layout->btn_file_transfer.h)
     {
         char* file_path = open_file_explorer();
-        
         if (file_path != NULL && strlen(file_path) > 0)
         {
             printf("📁 Fichier sélectionné pour l'envoi : %s\n", file_path);
-            
             Channel *active = channel_model_get_active();
             if (active)
             {
-                // On ajoute le chemin du fichier dans la liste des messages !
-                // Pour l'instant, on l'envoie comme texte pour vérifier que le chemin est bien transmis.
                 message_model_add(0, active->id, "Me", file_path); 
             }
         }
-        
         return 1;
     }
 
-    // FIX : BOUTON ENVOYER LE MESSAGE (Calcul des coordonnées en direct à la place de la structure manquante)
+    // 6. BOUTON ENVOYER LE MESSAGE (Calcul des coordonnées en direct)
     int send_x = layout->chat_input_bar.x + layout->chat_input_bar.w - 45;
     int send_y = layout->window_h - 56;
     if (cx >= send_x && cx <= send_x + 36 &&
@@ -157,6 +203,7 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
             {
                 message_model_add(0, active->id, "Me", layout->input_buffer);
                 layout->input_buffer[0] = '\0';
+                layout->input_cursor_pos = 0;
             }
         }
         return 0;
@@ -174,7 +221,7 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
         }
     }
 
-    // SÉLECTION D'UN SALON
+    // SÉLECTION D'UN SALON (Sidebar)
     if (cx >= layout->sidebar_channels.x && cx <= layout->sidebar_channels.x + layout->sidebar_channels.w)
     {
         int channel_y = 60;
@@ -208,11 +255,45 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
         }
     }
 
-    // FOCUS INPUT CHAT
+    // FOCUS ET PLACEMENT DU CURSEUR SUR LA BARRE DE TCHAT
     if (cx >= layout->chat_input_bar.x && cx <= layout->chat_input_bar.x + layout->chat_input_bar.w &&
         cy >= layout->chat_input_bar.y && cy <= layout->chat_input_bar.y + layout->chat_input_bar.h)
     {
         layout->is_input_focused = 1;
+        SDL_StartTextInput();
+
+        int local_x = cx - (layout->chat_input_bar.x + 15); 
+        
+        if (local_x <= 0 || layout->input_buffer[0] == '\0') 
+        {
+            layout->input_cursor_pos = 0;
+        }
+        else 
+        {
+            int len = (int)strlen(layout->input_buffer);
+            int last_w = 0;
+            layout->input_cursor_pos = len; 
+
+            for (int i = 1; i <= len; i++)
+            {
+                char sub_str[256] = ""; 
+                strncpy(sub_str, layout->input_buffer, i);
+                sub_str[i] = '\0';
+
+                int current_w = get_text_width(font_main, sub_str);
+
+                if (local_x < current_w)
+                {
+                    if (local_x - last_w < current_w - local_x)
+                        layout->input_cursor_pos = i - 1;
+                    else
+                        layout->input_cursor_pos = i;
+                    break;
+                }
+                last_w = current_w;
+            }
+        }
+        return 1; 
     }
     else
     {
@@ -223,60 +304,137 @@ int chat_controller_handle_left_click(ChatLayout *layout, int cx, int cy)
 
 void chat_controller_handle_keydown(ChatLayout *layout, SDL_Keycode sym)
 {
+    // Récupération de l'état des touches modificatrices (pour savoir si Ctrl est pressé)
+    SDL_Keymod mod = SDL_GetModState();
+    int is_ctrl_pressed = (mod & KMOD_CTRL) != 0;
+    // 1. GESTION DU CLAVIER POUR LA MODALE
     if (layout->show_create_modal && layout->modal_focused_field)
     {
-        if (sym == SDLK_BACKSPACE)
+        int len = (int)strlen(layout->modal_buffer);
+
+        // RACCOURCI : Remplacer tout le texte / Tout effacer (Ctrl + A)
+        if (is_ctrl_pressed && sym == SDLK_a)
         {
-            size_t len = strlen(layout->modal_buffer);
-            if (len > 0)
-                layout->modal_buffer[len - 1] = '\0';
+            layout->modal_buffer[0] = '\0';
+            layout->modal_cursor_pos = 0;
+            return;
         }
+
+        // Déplacement du curseur vers la gauche ←
+        if (sym == SDLK_LEFT && layout->modal_cursor_pos > 0) 
+        {
+            layout->modal_cursor_pos--;
+        }
+        // Déplacement du curseur vers la droite →
+        else if (sym == SDLK_RIGHT && layout->modal_cursor_pos < len) 
+        {
+            layout->modal_cursor_pos++;
+        }
+        // Suppression arrière (Retour arrière / Backspace)
+        else if (sym == SDLK_BACKSPACE && layout->modal_cursor_pos > 0) 
+        {
+            memmove(&layout->modal_buffer[layout->modal_cursor_pos - 1], 
+                    &layout->modal_buffer[layout->modal_cursor_pos], 
+                    len - layout->modal_cursor_pos + 1);
+            layout->modal_cursor_pos--;
+        }
+        // Suppression avant (Touche SUPPR / DELETE)
+        else if (sym == SDLK_DELETE && layout->modal_cursor_pos < len)
+        {
+            memmove(&layout->modal_buffer[layout->modal_cursor_pos], 
+                    &layout->modal_buffer[layout->modal_cursor_pos + 1], 
+                    len - layout->modal_cursor_pos);
+        }
+        // Validation et création du salon (Entrée / Enter)
         else if (sym == SDLK_RETURN || sym == SDLK_KP_ENTER)
         {
-            if (strlen(layout->modal_buffer) > 0)
+            if (len > 0)
             {
                 int next_id = channel_model_get_count() + 1;
                 channel_model_add(next_id, layout->modal_buffer, layout->modal_is_private);
+                
+                // Fermeture et réinitialisation propre de la modale
                 layout->show_create_modal = 0;
+                layout->modal_focused_field = 0;
                 layout->modal_buffer[0] = '\0';
+                layout->modal_cursor_pos = 0;
             }
         }
         return;
     }
-
-    if (sym == SDLK_BACKSPACE && layout->is_input_focused)
+    // 2. GESTION DU CLAVIER POUR LE CHAT PRINCIPAL
+    if (layout->is_input_focused)
     {
-        size_t len = strlen(layout->input_buffer);
-        if (len > 0)
-            layout->input_buffer[len - 1] = '\0';
-    }
-    else if ((sym == SDLK_RETURN || sym == SDLK_KP_ENTER) && layout->is_input_focused && strlen(layout->input_buffer) > 0)
-    {
-        Channel *active = channel_model_get_active();
-        if (active)
+        int len = (int)strlen(layout->input_buffer);
+        // RACCOURCI : Remplacer tout le texte / Tout effacer (Ctrl + A)
+        if (is_ctrl_pressed && sym == SDLK_a)
         {
-            message_model_add(0, active->id, "Me", layout->input_buffer);
             layout->input_buffer[0] = '\0';
+            layout->input_cursor_pos = 0;
+            return;
+        }
+
+        if (sym == SDLK_LEFT && layout->input_cursor_pos > 0) {
+            layout->input_cursor_pos--;
+        }
+        else if (sym == SDLK_RIGHT && layout->input_cursor_pos < len) {
+            layout->input_cursor_pos++;
+        }
+        else if (sym == SDLK_BACKSPACE && layout->input_cursor_pos > 0) {
+            memmove(&layout->input_buffer[layout->input_cursor_pos - 1], 
+                    &layout->input_buffer[layout->input_cursor_pos], 
+                    len - layout->input_cursor_pos + 1);
+            layout->input_cursor_pos--;
+        }
+        else if (sym == SDLK_DELETE && layout->input_cursor_pos < len)
+        {
+            memmove(&layout->input_buffer[layout->input_cursor_pos], 
+                    &layout->input_buffer[layout->input_cursor_pos + 1], 
+                    len - layout->input_cursor_pos);
+        }
+        else if ((sym == SDLK_RETURN || sym == SDLK_KP_ENTER) && len > 0)
+        {
+            Channel *active = channel_model_get_active();
+            if (active)
+            {
+                message_model_add(0, active->id, "Me", layout->input_buffer);
+                layout->input_buffer[0] = '\0';
+                layout->input_cursor_pos = 0;
+            }
         }
     }
 }
 
 void chat_controller_handle_textinput(ChatLayout *layout, const char *text)
 {
+    size_t text_len = strlen(text);
+
+    // Injection de texte dans la modale
     if (layout->show_create_modal && layout->modal_focused_field)
     {
-        if (strlen(layout->modal_buffer) + strlen(text) < sizeof(layout->modal_buffer) - 1)
+        size_t current_len = strlen(layout->modal_buffer);
+        if (current_len + text_len < sizeof(layout->modal_buffer) - 1)
         {
-            strcat(layout->modal_buffer, text);
+            memmove(&layout->modal_buffer[layout->modal_cursor_pos + text_len], 
+                    &layout->modal_buffer[layout->modal_cursor_pos], 
+                    current_len - layout->modal_cursor_pos + 1);
+            memcpy(&layout->modal_buffer[layout->modal_cursor_pos], text, text_len);
+            layout->modal_cursor_pos += text_len;
         }
         return;
     }
 
+    // Injection de texte dans le chat principal
     if (layout->is_input_focused)
     {
-        if (strlen(layout->input_buffer) + strlen(text) < MAX_MSG_LENGTH - 1)
+        size_t current_len = strlen(layout->input_buffer);
+        if (current_len + text_len < MAX_MSG_LENGTH - 1)
         {
-            strcat(layout->input_buffer, text);
+            memmove(&layout->input_buffer[layout->input_cursor_pos + text_len], 
+                    &layout->input_buffer[layout->input_cursor_pos], 
+                    current_len - layout->input_cursor_pos + 1);
+            memcpy(&layout->input_buffer[layout->input_cursor_pos], text, text_len);
+            layout->input_cursor_pos += text_len;
         }
     }
 }
@@ -287,8 +445,8 @@ static char* open_file_explorer(void)
 {
 #ifdef _WIN32
     OPENFILENAMEW ofn;           // Version Wide (Unicode)
-    static wchar_t szFileW[260]; // Buffer en caractères larges
-    static char szFileUTF8[512]; // Buffer final converti en UTF-8
+    static wchar_t szFileW[260]; // Buffer en caractères larges (UTF-16 Windows)
+    static char szFileUTF8[512]; // Buffer final converti en UTF-8 universel
     
     memset(szFileW, 0, sizeof(szFileW));
     memset(szFileUTF8, 0, sizeof(szFileUTF8));
@@ -298,7 +456,6 @@ static char* open_file_explorer(void)
     ofn.hwndOwner = NULL;
     ofn.lpstrFile = szFileW;
     ofn.nMaxFile = 260;
-    // Les filtres doivent aussi être en Wide string (L"...")
     ofn.lpstrFilter = L"Images (*.png;*.jpg;*.jpeg)\0*.png;*.jpg;*.jpeg\0All Files\0*.*\0";
     ofn.nFilterIndex = 1;
     ofn.lpstrFileTitle = NULL;
@@ -308,7 +465,7 @@ static char* open_file_explorer(void)
 
     if (GetOpenFileNameW(&ofn) == TRUE)
     {
-        // Conversion propre du chemin Wide (UTF-16 Windows) vers du bon vieil UTF-8 compatible partout
+        // Conversion propre du chemin Wide UTF-16 vers UTF-8 pour supporter les accents/emojis
         WideCharToMultiByte(CP_UTF8, 0, szFileW, -1, szFileUTF8, sizeof(szFileUTF8), NULL, NULL);
         printf("[FILE EXPLORER] Selected file (UTF-8): %s\n", szFileUTF8);
         return szFileUTF8; 
@@ -322,13 +479,10 @@ static char* open_file_explorer(void)
 
 void chat_controller_handle_right_click(ChatLayout *layout, int cx, int cy)
 {
-    (void)layout;
-    (void)cx;
-    (void)cy;
+    (void)layout; (void)cx; (void)cy;
 }
+
 void chat_controller_handle_menu_action(ChatLayout *layout, int cx, int cy)
 {
-    (void)layout;
-    (void)cx;
-    (void)cy;
+    (void)layout; (void)cx; (void)cy;
 }

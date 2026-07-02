@@ -171,17 +171,14 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
     {
         if (active_ch->is_private)
         {
-            // 1. On dessine le cadenas avec la police emoji
             if (font_emoji)
             {
                 draw_text(renderer, font_emoji, "🔒", layout->chat_top_bar.x + 20, 12, color_white);
             }
-            // 2. On dessine le nom du salon avec la police de titre, décalé pour ne pas chevaucher le cadenas
             draw_text(renderer, font_title, active_ch->name, layout->chat_top_bar.x + 55, 12, color_white);
         }
         else
         {
-            // Salon public normal : on garde le fonctionnement d'origine avec le dièse "#"
             char heading[64];
             snprintf(heading, sizeof(heading), "# %s", active_ch->name);
             draw_text(renderer, font_title, heading, layout->chat_top_bar.x + 20, 12, color_white);
@@ -191,7 +188,6 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
     channels_draw_sidebar(renderer, layout, font_title, font_main, font_sub, font_emoji, mx, my, color_white, color_muted, VAR_COLOR_BG_SERVERS);
     users_draw_sidebar(renderer, layout, font_main, font_sub, (SDL_Color){0x23, 0xA5, 0x5A, 0xFF}, color_muted);
 
-    /// GESTION DU SURVOL / DESSIN CADENAS OU POUBELLE SUR LES SALONS
     layout->hover_channel_delete_index = -1;
     if (!layout->show_create_modal && mx >= layout->sidebar_channels.x && mx <= layout->sidebar_channels.x + layout->sidebar_channels.w)
     {
@@ -204,22 +200,17 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
             {
                 layout->hover_channel_delete_index = i;
                 layout->btn_delete_channel_rect = (SDL_Rect){item_rect.x + item_rect.w - 24, channel_y - 2, 20, 20};
-                // --- EFFET DE SURVOL DYNAMIQUE SUR LA POUBELLE ---
                 int mx_poub, my_poub;
                 SDL_GetMouseState(&mx_poub, &my_poub);
-                // On vérifie si la souris est précisément au-dessus de la corbeille
                 int is_bin_hovered = (mx_poub >= layout->btn_delete_channel_rect.x && mx_poub <= layout->btn_delete_channel_rect.x + layout->btn_delete_channel_rect.w &&
                                       my_poub >= layout->btn_delete_channel_rect.y && my_poub <= layout->btn_delete_channel_rect.y + layout->btn_delete_channel_rect.h);
 
-                SDL_Color trash_color = (SDL_Color){160, 40, 40, 255}; // Couleur rouge plus sombre par défaut
+                SDL_Color trash_color = (SDL_Color){160, 40, 40, 255};
 
                 if (is_bin_hovered)
                 {
-                    // On affiche le fond rouge foncé uniquement si on pointe la corbeille
                     SDL_SetRenderDrawColor(renderer, 80, 20, 20, 255);
                     SDL_RenderFillRect(renderer, &layout->btn_delete_channel_rect);
-
-                    // On passe la corbeille en rouge vif
                     trash_color = (SDL_Color){255, 60, 60, 255};
                 }
 
@@ -235,6 +226,7 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
 
     draw_chat_messages(renderer, layout, font_main, font_emoji, color_white);
 
+    // --- FOND DE LA BARRE D'INPUT CHAT ---
     SDL_SetRenderDrawColor(renderer, VAR_COLOR_BG_INPUT.r, VAR_COLOR_BG_INPUT.g, VAR_COLOR_BG_INPUT.b, VAR_COLOR_BG_INPUT.a);
     SDL_RenderFillRect(renderer, &layout->chat_input_bar);
 
@@ -246,36 +238,49 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
         SDL_RenderDrawRect(renderer, &interior);
     }
 
-    int text_width = 0;
+    // --- RENDU DYNAMIQUE DU TEXTE ET DU CURSEUR DU CHAT ---
+    int cursor_x_offset = 0;
+    
+    // Décalage X et Y réutilisables (calculés à un seul endroit)
+    int input_text_x = layout->chat_input_bar.x + 15;
+    int input_text_y = layout->chat_input_bar.y + 12;
+
     if (strlen(layout->input_buffer) == 0)
     {
         if (active_ch)
         {
             char placeholder[128];
             snprintf(placeholder, sizeof(placeholder), "Message %s%s", active_ch->is_private ? "🔒" : "#", active_ch->name);
-            draw_text(renderer, font_main, placeholder, layout->chat_input_bar.x + 15, layout->chat_input_bar.y + 12, color_muted);
+            draw_text(renderer, font_main, placeholder, input_text_x, input_text_y, color_muted);
         }
     }
     else
     {
-        draw_text(renderer, font_main, layout->input_buffer, layout->chat_input_bar.x + 15, layout->chat_input_bar.y + 12, color_white);
-        TTF_SizeText(font_main, layout->input_buffer, &text_width, NULL);
+        draw_text(renderer, font_main, layout->input_buffer, input_text_x, input_text_y, color_white);
+        
+        // On mesure uniquement la sous-chaîne jusqu'à la position actuelle du curseur
+        char sub_text[MAX_MSG_LENGTH] = "";
+        if (layout->input_cursor_pos > 0 && layout->input_cursor_pos < MAX_MSG_LENGTH)
+        {
+            strncpy(sub_text, layout->input_buffer, layout->input_cursor_pos);
+            sub_text[layout->input_cursor_pos] = '\0';
+        }
+        TTF_SizeText(font_main, sub_text, &cursor_x_offset, NULL);
     }
 
+    // Rendu de la barre clignotante du chat principal (à la position dynamique calculée)
     if (layout->is_input_focused && (SDL_GetTicks() / 500) % 2 == 0)
     {
-        int cursor_x = layout->chat_input_bar.x + 15 + text_width;
+        int cursor_x = input_text_x + cursor_x_offset;
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-        SDL_RenderDrawLine(renderer, cursor_x, layout->chat_input_bar.y + 12, cursor_x, layout->chat_input_bar.y + 32);
+        SDL_RenderDrawLine(renderer, cursor_x, input_text_y, cursor_x, input_text_y + 20);
     }
 
-    // 5. GESTION DU RECTANGLE DE SURVOL SUR LES EMOJIS
+    // --- LE RESTE DE TA FONCTION (EMOJIS, MODALE...) RESTE IDENTIQUE ---
     if (font_emoji)
     {
-        // Couleur du fond au survol (Gris clair transparent Discord style)
         SDL_Color hover_bg_color = {0x35, 0x37, 0x3C, 255};
 
-        // Émoji : Ajouter Salon ➕
         int is_add_hovered = (mx >= layout->btn_add_channel.x && mx <= layout->btn_add_channel.x + layout->btn_add_channel.w &&
                               my >= layout->btn_add_channel.y && my <= layout->btn_add_channel.y + layout->btn_add_channel.h);
         if (is_add_hovered && !layout->show_create_modal)
@@ -285,7 +290,6 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
         }
         draw_text(renderer, font_emoji, "➕", layout->btn_add_channel.x, layout->btn_add_channel.y, is_add_hovered ? color_white : color_muted);
 
-        // Émoji : Transfert de Fichier ➕ (dans la barre)
         int is_file_hovered = (mx >= layout->btn_file_transfer.x && mx <= layout->btn_file_transfer.x + layout->btn_file_transfer.w &&
                                my >= layout->btn_file_transfer.y && my <= layout->btn_file_transfer.y + layout->btn_file_transfer.h);
         if (is_file_hovered && !layout->show_create_modal)
@@ -295,7 +299,6 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
         }
         draw_text(renderer, font_emoji, "➕", layout->btn_file_transfer.x + 6, layout->btn_file_transfer.y + 6, is_file_hovered ? color_white : color_muted);
 
-        // Émoji : Envoyer le message ➡️
         int send_x = layout->chat_input_bar.x + layout->chat_input_bar.w - 45;
         int send_y = layout->window_h - 56;
         SDL_Rect btn_send_rect = {send_x, send_y, 36, 36};
@@ -307,7 +310,6 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
         }
         draw_text(renderer, font_emoji, "➡️", send_x + 6, send_y + 6, is_send_hovered ? color_white : color_muted);
 
-        // Émoji : Bouton Appel 📞
         int is_call_hovered = (mx >= layout->btn_call.x && mx <= layout->btn_call.x + layout->btn_call.w &&
                                my >= layout->btn_call.y && my <= layout->btn_call.y + layout->btn_call.h);
         if (is_call_hovered && !layout->show_create_modal)
@@ -316,13 +318,9 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
             SDL_RenderFillRect(renderer, &layout->btn_call);
         }
 
-        // Au survol, le bouton devient blanc, sinon il reste grisé
         SDL_Color call_color = is_call_hovered ? color_white : color_muted;
-
-        // On affiche l'icône d'appel
         draw_text(renderer, font_emoji, "📞", layout->btn_call.x + 6, layout->btn_call.y + 6, call_color);
 
-        // Bouton : Log Out 🚪
         int is_logout_hovered = (mx >= layout->btn_logout.x && mx <= layout->btn_logout.x + layout->btn_logout.w &&
                                  my >= layout->btn_logout.y && my <= layout->btn_logout.y + layout->btn_logout.h);
         if (is_logout_hovered)
@@ -338,7 +336,6 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
         draw_text(renderer, font_sub, "Log Out", layout->btn_logout.x + 50, layout->btn_logout.y + 10, color_white);
     }
 
-    // 6. Modale de création
     if (layout->show_create_modal)
     {
         SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
@@ -363,7 +360,7 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
             SDL_RenderDrawRect(renderer, &interior_modal);
         }
 
-        int modal_text_width = 0;
+        int modal_text_offset = 0;
         if (strlen(layout->modal_buffer) == 0)
         {
             draw_text(renderer, font_main, "new-channel", modal_input_rect.x + 12, modal_input_rect.y + 10, color_muted);
@@ -371,19 +368,25 @@ void draw_chat_interface(SDL_Renderer *renderer, ChatLayout *layout, TTF_Font *f
         else
         {
             draw_text(renderer, font_main, layout->modal_buffer, modal_input_rect.x + 12, modal_input_rect.y + 10, color_white);
-            TTF_SizeText(font_main, layout->modal_buffer, &modal_text_width, NULL);
+            
+            char sub_modal_text[256] = "";
+            if (layout->modal_cursor_pos > 0 && layout->modal_cursor_pos < 256)
+            {
+                strncpy(sub_modal_text, layout->modal_buffer, layout->modal_cursor_pos);
+                sub_modal_text[layout->modal_cursor_pos] = '\0';
+            }
+            TTF_SizeText(font_main, sub_modal_text, &modal_text_offset, NULL);
         }
 
         if (layout->modal_focused_field && (SDL_GetTicks() / 500) % 2 == 0)
         {
-            int m_cursor_x = modal_input_rect.x + 12 + modal_text_width;
+            int m_cursor_x = modal_input_rect.x + 12 + modal_text_offset;
             SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
             SDL_RenderDrawLine(renderer, m_cursor_x, modal_input_rect.y + 10, m_cursor_x, modal_input_rect.y + 30);
         }
 
-        // On dessine le cadenas d'un côté avec la police emoji, et le texte à côté avec la police principale
         draw_text(renderer, font_emoji, "🔒", modal_bg_rect.x + 30, modal_bg_rect.y + 162, color_white);
-        draw_text(renderer, font_main, "Private Channel", modal_bg_rect.x + 60, modal_bg_rect.y + 162, color_white); // décalé à +60 pour laisser la place au cadenas
+        draw_text(renderer, font_main, "Private Channel", modal_bg_rect.x + 60, modal_bg_rect.y + 162, color_white);
 
         if (layout->modal_is_private)
         {
